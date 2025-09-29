@@ -44,7 +44,7 @@ $required_files = array(
     'features/ajax-handlers.php',        // AJAX処理
     'features/search-integration.php',   // AI機能・検索履歴
     'features/enhanced-ai-generator.php', // 高度なAI生成機能
-    'features/google-sheets-sync-simple.php',   // Google Sheets統合（シンプル版）
+    'features/google-sheets-sync.php',   // Google Sheets統合（シンプル版）
     'features/sheets-webhook.php',       // Webhook処理
     'features/sheets-initializer.php'    // スプレッドシート初期化
 );
