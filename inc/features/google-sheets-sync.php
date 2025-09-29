@@ -28,6 +28,11 @@ class GoogleSheetsSync {
     
     // Google Sheets API設定
     const SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets/';
+    
+    // デバッグ設定
+    private $debug_enabled = false;
+    private $detailed_logging = false;
+    private $performance_tracking = false;
     const AUTH_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
     
     public static function getInstance() {
@@ -73,6 +78,120 @@ class GoogleSheetsSync {
             $this->access_token = $stored_token;
             $this->token_expires_at = $stored_expires;
         }
+    }
+    
+    /**
+     * デバッグモードの設定
+     */
+    public function enable_debug_mode($detailed = false, $performance = false) {
+        $this->debug_enabled = true;
+        $this->detailed_logging = $detailed;
+        $this->performance_tracking = $performance;
+        
+        gi_log_error('Debug mode enabled', array(
+            'detailed_logging' => $detailed,
+            'performance_tracking' => $performance
+        ));
+    }
+    
+    /**
+     * 強化されたロギング関数
+     */
+    private function enhanced_log($message, $data = [], $level = 'info') {
+        $log_data = [
+            'timestamp' => current_time('Y-m-d H:i:s'),
+            'level' => $level,
+            'message' => $message,
+            'data' => $data,
+            'memory_usage' => memory_get_usage(true),
+            'memory_peak' => memory_get_peak_usage(true)
+        ];
+        
+        if ($this->performance_tracking) {
+            $log_data['execution_time'] = $this->get_execution_time();
+        }
+        
+        if ($this->detailed_logging) {
+            $log_data['backtrace'] = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
+        }
+        
+        // 通常のログ出力
+        gi_log_error($message, $log_data);
+        
+        // デバッグモードの場合は即座にファイルに出力
+        if ($this->debug_enabled) {
+            $debug_log_file = WP_CONTENT_DIR . '/uploads/sheets-sync-debug.log';
+            $log_entry = date('Y-m-d H:i:s') . ' [' . strtoupper($level) . '] ' . $message . "\n";
+            $log_entry .= json_encode($log_data, JSON_PRETTY_PRINT) . "\n\n";
+            file_put_contents($debug_log_file, $log_entry, FILE_APPEND | LOCK_EX);
+        }
+    }
+    
+    /**
+     * パフォーマンストラッキング
+     */
+    private $start_time = null;
+    
+    private function start_timer() {
+        $this->start_time = microtime(true);
+    }
+    
+    private function get_execution_time() {
+        return $this->start_time ? round((microtime(true) - $this->start_time) * 1000, 2) : null;
+    }
+    
+    /**
+     * 同期統計の記録
+     */
+    private function record_sync_stats($operation, $success_count, $error_count, $conflict_count = 0) {
+        $stats = get_option('gi_sheets_sync_stats', []);
+        $today = date('Y-m-d');
+        
+        if (!isset($stats[$today])) {
+            $stats[$today] = [];
+        }
+        
+        if (!isset($stats[$today][$operation])) {
+            $stats[$today][$operation] = [
+                'runs' => 0,
+                'success' => 0,
+                'errors' => 0,
+                'conflicts' => 0
+            ];
+        }
+        
+        $stats[$today][$operation]['runs']++;
+        $stats[$today][$operation]['success'] += $success_count;
+        $stats[$today][$operation]['errors'] += $error_count;
+        $stats[$today][$operation]['conflicts'] += $conflict_count;
+        
+        // 30日分のみ保持
+        $cutoff_date = date('Y-m-d', strtotime('-30 days'));
+        foreach ($stats as $date => $data) {
+            if ($date < $cutoff_date) {
+                unset($stats[$date]);
+            }
+        }
+        
+        update_option('gi_sheets_sync_stats', $stats);
+    }
+    
+    /**
+     * 同期統計の取得
+     */
+    public function get_sync_stats($days = 7) {
+        $stats = get_option('gi_sheets_sync_stats', []);
+        $result = [];
+        
+        for ($i = 0; $i < $days; $i++) {
+            $date = date('Y-m-d', strtotime("-{$i} days"));
+            $result[$date] = isset($stats[$date]) ? $stats[$date] : [
+                'sheets_to_wp' => ['runs' => 0, 'success' => 0, 'errors' => 0, 'conflicts' => 0],
+                'wp_to_sheets' => ['runs' => 0, 'success' => 0, 'errors' => 0, 'conflicts' => 0]
+            ];
+        }
+        
+        return array_reverse($result, true);
     }
     
     /**
@@ -640,6 +759,110 @@ class GoogleSheetsSync {
     }
     
     /**
+     * データ整合性チェック
+     */
+    private function validate_sync_data($row_data) {
+        $errors = [];
+        
+        // 必須フィールドのチェック
+        if (empty($row_data[1])) { // タイトル
+            $errors[] = 'タイトルが空です';
+        }
+        
+        // 日付フィールドの検証
+        $date_fields = [5, 6, 7]; // 申請開始日、申請締切、事業実施期間開始
+        foreach ($date_fields as $index) {
+            if (!empty($row_data[$index]) && !strtotime($row_data[$index])) {
+                $errors[] = "無効な日付形式です (列" . ($index + 1) . ")";
+            }
+        }
+        
+        // 数値フィールドの検証
+        $numeric_fields = [8, 9, 10, 26]; // 助成上限額、助成下限額、助成率、採択率
+        foreach ($numeric_fields as $index) {
+            if (!empty($row_data[$index]) && !is_numeric(str_replace(',', '', $row_data[$index]))) {
+                $errors[] = "無効な数値形式です (列" . ($index + 1) . ")";
+            }
+        }
+        
+        return $errors;
+    }
+    
+    /**
+     * 同期前バックアップの作成
+     */
+    private function create_sync_backup($post_id) {
+        $post = get_post($post_id);
+        if (!$post) return false;
+        
+        $backup_data = [
+            'post_data' => $post,
+            'meta_data' => get_post_meta($post_id),
+            'terms' => []
+        ];
+        
+        // タクソノミー情報のバックアップ
+        $taxonomies = ['grant_category', 'grant_prefecture', 'grant_municipality', 'grant_tag'];
+        foreach ($taxonomies as $taxonomy) {
+            $terms = wp_get_post_terms($post_id, $taxonomy);
+            if (!is_wp_error($terms)) {
+                $backup_data['terms'][$taxonomy] = $terms;
+            }
+        }
+        
+        // バックアップをtransientに保存（1時間）
+        set_transient('sync_backup_' . $post_id, $backup_data, HOUR_IN_SECONDS);
+        
+        gi_log_error('Sync backup created', array('post_id' => $post_id));
+        return true;
+    }
+    
+    /**
+     * 同期エラー時のロールバック
+     */
+    private function rollback_sync($post_id) {
+        $backup_data = get_transient('sync_backup_' . $post_id);
+        if (!$backup_data) {
+            gi_log_error('No backup data found for rollback', array('post_id' => $post_id));
+            return false;
+        }
+        
+        try {
+            // 投稿データの復元
+            $post_data = (array) $backup_data['post_data'];
+            wp_update_post($post_data);
+            
+            // メタデータの復元
+            if (!empty($backup_data['meta_data'])) {
+                delete_post_meta($post_id, ''); // 全メタを削除
+                foreach ($backup_data['meta_data'] as $key => $values) {
+                    foreach ($values as $value) {
+                        add_post_meta($post_id, $key, maybe_unserialize($value));
+                    }
+                }
+            }
+            
+            // タクソノミーの復元
+            if (!empty($backup_data['terms'])) {
+                foreach ($backup_data['terms'] as $taxonomy => $terms) {
+                    $term_ids = array_map(function($term) { return $term->term_id; }, $terms);
+                    wp_set_post_terms($post_id, $term_ids, $taxonomy);
+                }
+            }
+            
+            gi_log_error('Sync rollback completed', array('post_id' => $post_id));
+            delete_transient('sync_backup_' . $post_id);
+            return true;
+        } catch (Exception $e) {
+            gi_log_error('Rollback failed', array(
+                'post_id' => $post_id,
+                'error' => $e->getMessage()
+            ));
+            return false;
+        }
+    }
+    
+    /**
      * 投稿保存時のスプレッドシート同期
      */
     public function sync_post_to_sheets($post_id, $post, $update) {
@@ -686,17 +909,55 @@ class GoogleSheetsSync {
             gi_log_error('Row search result', array('post_id' => $post_id, 'row_number' => $row_number));
             
             if ($row_number) {
-                // 既存行を更新 - 31列対応（AE列まで）
+                // 競合チェック - シートの最終更新時刻を確認
+                $wp_modified = strtotime($post->post_modified_gmt);
+                $sheets_last_sync = get_post_meta($post_id, '_sheets_last_sync', true);
+                
+                // シートから現在のタイムスタンプを取得（AE列）
+                $timestamp_range = $this->sheet_name . '!AE' . $row_number;
+                try {
+                    $sheet_data_response = $this->read_sheet_data_range($timestamp_range);
+                    $sheet_timestamp = null;
+                    
+                    if (!empty($sheet_data_response) && isset($sheet_data_response[0][0])) {
+                        $sheet_timestamp = strtotime($sheet_data_response[0][0]);
+                    }
+                    
+                    // 競合検出：シートの方が新しい場合
+                    if ($sheet_timestamp && $sheets_last_sync && $sheet_timestamp > $sheets_last_sync && $sheet_timestamp > $wp_modified) {
+                        gi_log_error('WP to Sheets sync conflict detected', array(
+                            'post_id' => $post_id,
+                            'wp_modified' => date('Y-m-d H:i:s', $wp_modified),
+                            'sheet_timestamp' => date('Y-m-d H:i:s', $sheet_timestamp),
+                            'last_sync' => $sheets_last_sync ? date('Y-m-d H:i:s', $sheets_last_sync) : 'never'
+                        ));
+                        
+                        // 競合の場合は更新をスキップし、管理者に通知
+                        $this->notify_wp_sync_conflict($post_id, $post->post_title, $wp_modified, $sheet_timestamp);
+                        return;
+                    }
+                } catch (Exception $e) {
+                    gi_log_error('Error checking sheet timestamp for conflict detection', array(
+                        'post_id' => $post_id,
+                        'error' => $e->getMessage()
+                    ));
+                }
+                
+                // 既存行を更新 - 31列対応（AE列まで） + タイムスタンプ更新
+                $row_data[30] = current_time('Y-m-d H:i:s'); // AE列にタイムスタンプを追加
                 $range = $this->sheet_name . '!A' . $row_number . ':AE' . $row_number;
-                gi_log_error('Updating existing row', array('post_id' => $post_id, 'range' => $range));
+                gi_log_error('Updating existing row with conflict check', array('post_id' => $post_id, 'range' => $range));
                 $success = $this->write_sheet_data($range, array($row_data));
             } else {
-                // 新しい行を追加
-                gi_log_error('Appending new row', array('post_id' => $post_id));
+                // 新しい行を追加 - タイムスタンプ付き
+                $row_data[30] = current_time('Y-m-d H:i:s'); // AE列にタイムスタンプを追加
+                gi_log_error('Appending new row with timestamp', array('post_id' => $post_id));
                 $success = $this->append_sheet_data($row_data);
             }
             
             if ($success) {
+                // 成功時にWPの同期タイムスタンプを更新
+                update_post_meta($post_id, '_sheets_last_sync', current_time('timestamp'));
                 gi_log_error('Post synced to sheets successfully', array('post_id' => $post_id));
             } else {
                 throw new Exception('Failed to write data to sheets');
@@ -762,10 +1023,15 @@ class GoogleSheetsSync {
     
     /**
      * スプレッドシートからWordPressへの同期
+     * 競合処理とエラーハンドリングを強化
      */
     public function sync_sheets_to_wp() {
         try {
-            gi_log_error('Starting sync_sheets_to_wp');
+            $this->start_timer();
+        $this->enhanced_log('Starting sync_sheets_to_wp with enhanced conflict handling', [], 'info');
+            
+            // 同期開始時刻を記録（競合検出用）
+            $sync_start_time = current_time('timestamp');
             
             $sheet_data = $this->read_sheet_data();
             if (empty($sheet_data)) {
@@ -777,6 +1043,9 @@ class GoogleSheetsSync {
             
             $headers = array_shift($sheet_data); // ヘッダー行を除去
             $synced_count = 0;
+            $conflict_count = 0;
+            $error_count = 0;
+            $conflicts = [];
             $new_post_ids_to_update = array(); // 新規作成された投稿のIDと行番号を記録
         
         foreach ($sheet_data as $row_index => $row) {
@@ -784,37 +1053,99 @@ class GoogleSheetsSync {
                 continue; // 不完全な行をスキップ
             }
             
-            $original_post_id = intval($row[0]); // 元のpost_id（空の場合は0）
-            $post_id = $original_post_id;
-            $title = isset($row[1]) ? sanitize_text_field($row[1]) : '';
-            $content = isset($row[2]) ? wp_kses_post($row[2]) : '';
-            $excerpt = isset($row[3]) ? sanitize_textarea_field($row[3]) : '';
-            $status = isset($row[4]) ? sanitize_text_field($row[4]) : 'draft';
-            
-            // 削除されたアイテムの処理
-            if ($status === 'deleted') {
-                if ($post_id && get_post($post_id)) {
-                    wp_delete_post($post_id, true);
-                    $synced_count++;
+            try {
+                $original_post_id = intval($row[0]); // 元のpost_id（空の場合は0）
+                $post_id = $original_post_id;
+                $title = isset($row[1]) ? sanitize_text_field($row[1]) : '';
+                $content = isset($row[2]) ? wp_kses_post($row[2]) : '';
+                $excerpt = isset($row[3]) ? sanitize_textarea_field($row[3]) : '';
+                $status = isset($row[4]) ? sanitize_text_field($row[4]) : 'draft';
+                
+                // 削除されたアイテムの処理
+                if ($status === 'deleted') {
+                    if ($post_id && get_post($post_id)) {
+                        wp_delete_post($post_id, true);
+                        $synced_count++;
+                    }
+                    continue;
                 }
-                continue;
-            }
+                
+                // 既存投稿の競合検出
+                if ($post_id > 0) {
+                    $existing_post = get_post($post_id);
+                    if ($existing_post) {
+                        $wp_modified = strtotime($existing_post->post_modified_gmt);
+                        $sheets_last_sync = get_post_meta($post_id, '_sheets_last_sync', true);
+                        
+                        // WordPressでの最後の同期後に更新があった場合は競合の可能性
+                        if ($sheets_last_sync && $wp_modified > $sheets_last_sync) {
+                            // シートデータのタイムスタンプをチェック（AE列想定）
+                            $sheet_timestamp = isset($row[30]) && !empty($row[30]) ? strtotime($row[30]) : null;
+                            
+                            if ($sheet_timestamp && $sheet_timestamp < $wp_modified) {
+                                // WordPressの方が新しい場合は競合として記録
+                                $conflicts[] = [
+                                    'post_id' => $post_id,
+                                    'title' => $title,
+                                    'wp_modified' => $wp_modified,
+                                    'sheet_timestamp' => $sheet_timestamp,
+                                    'action' => 'skipped_wp_newer'
+                                ];
+                                
+                                gi_log_error('Conflict detected - WordPress newer', array(
+                                    'post_id' => $post_id,
+                                    'title' => $title,
+                                    'wp_modified' => date('Y-m-d H:i:s', $wp_modified),
+                                    'sheet_timestamp' => $sheet_timestamp ? date('Y-m-d H:i:s', $sheet_timestamp) : 'null'
+                                ));
+                                
+                                $conflict_count++;
+                                continue; // この行はスキップ
+                            }
+                        }
+                    }
+                }
             
             $was_new_post = false; // 新規投稿かどうかのフラグ
             
+            // データ整合性チェック
+            $validation_errors = $this->validate_sync_data($row);
+            if (!empty($validation_errors)) {
+                $error_count++;
+                gi_log_error('Data validation failed', array(
+                    'post_id' => $post_id,
+                    'title' => $title,
+                    'errors' => $validation_errors
+                ));
+                continue; // この行をスキップ
+            }
+            
             // 既存投稿の更新または新規作成
             if ($post_id && get_post($post_id)) {
-                // 既存投稿を更新
-                $updated_post = array(
-                    'ID' => $post_id,
-                    'post_title' => $title,
-                    'post_content' => $content,
-                    'post_excerpt' => $excerpt,
-                    'post_status' => $status,
-                );
+                // 既存投稿の更新前にバックアップを作成
+                $this->create_sync_backup($post_id);
                 
-                wp_update_post($updated_post);
-                gi_log_error('Updated existing post', array('post_id' => $post_id, 'title' => $title));
+                try {
+                    // 既存投稿を更新
+                    $updated_post = array(
+                        'ID' => $post_id,
+                        'post_title' => $title,
+                        'post_content' => $content,
+                        'post_excerpt' => $excerpt,
+                        'post_status' => $status,
+                    );
+                    
+                    $result = wp_update_post($updated_post);
+                    if (is_wp_error($result)) {
+                        throw new Exception('Failed to update post: ' . $result->get_error_message());
+                    }
+                    
+                    gi_log_error('Updated existing post', array('post_id' => $post_id, 'title' => $title));
+                } catch (Exception $update_error) {
+                    // 更新に失敗した場合はロールバック
+                    $this->rollback_sync($post_id);
+                    throw $update_error;
+                }
             } else {
                 // 新規投稿を作成
                 $new_post = array(
@@ -826,6 +1157,10 @@ class GoogleSheetsSync {
                 );
                 
                 $post_id = wp_insert_post($new_post);
+                
+                if (is_wp_error($post_id)) {
+                    throw new Exception('Failed to create new post: ' . $post_id->get_error_message());
+                }
                 $was_new_post = true;
                 
                 if ($post_id && !is_wp_error($post_id)) {
@@ -900,17 +1235,58 @@ class GoogleSheetsSync {
                     ));
                 }
                 
-                // カテゴリを設定（V列のデータから） ★完全連携
+                // カテゴリを設定（V列のデータから） ★完全連携 - 自動作成対応
                 if (isset($row[21]) && !empty($row[21])) {
                     $categories = array_map('trim', explode(',', $row[21]));
-                    $category_result = wp_set_post_terms($post_id, $categories, 'grant_category');
+                    $category_ids = [];
                     
-                    gi_log_error('Category sync result', array(
-                        'post_id' => $post_id,
-                        'raw_category_data' => $row[21],
-                        'categories_array' => $categories,
-                        'set_terms_result' => $category_result
-                    ));
+                    foreach ($categories as $category_name) {
+                        if (empty($category_name)) continue;
+                        
+                        // 既存のカテゴリを検索
+                        $term = get_term_by('name', $category_name, 'grant_category');
+                        
+                        if (!$term) {
+                            // カテゴリが存在しない場合は自動作成
+                            $term_result = wp_insert_term($category_name, 'grant_category');
+                            
+                            if (is_wp_error($term_result)) {
+                                gi_log_error('Category creation error', array(
+                                    'category_name' => $category_name,
+                                    'error' => $term_result->get_error_message()
+                                ));
+                                continue;
+                            }
+                            
+                            $category_ids[] = $term_result['term_id'];
+                            gi_log_error('Auto-created category', array(
+                                'category_name' => $category_name,
+                                'term_id' => $term_result['term_id']
+                            ));
+                        } else {
+                            $category_ids[] = $term->term_id;
+                        }
+                    }
+                    
+                    // カテゴリをポストに設定
+                    if (!empty($category_ids)) {
+                        $category_result = wp_set_post_terms($post_id, $category_ids, 'grant_category');
+                        
+                        gi_log_error('Category sync result', array(
+                            'post_id' => $post_id,
+                            'raw_category_data' => $row[21],
+                            'categories_array' => $categories,
+                            'category_ids' => $category_ids,
+                            'set_terms_result' => $category_result
+                        ));
+                        
+                        if (is_wp_error($category_result)) {
+                            gi_log_error('Category setting error', array(
+                                'post_id' => $post_id,
+                                'error' => $category_result->get_error_message()
+                            ));
+                        }
+                    }
                 }
                 
                 // タグを設定（W列のデータから） ★完全連携
@@ -941,7 +1317,18 @@ class GoogleSheetsSync {
                     ));
                 }
                 
+                // 同期タイムスタンプを更新
+                update_post_meta($post_id, '_sheets_last_sync', $sync_start_time);
                 $synced_count++;
+                
+            } catch (Exception $e) {
+                $error_count++;
+                gi_log_error('Error processing sheet row', array(
+                    'row_index' => $row_index,
+                    'post_id' => $post_id,
+                    'title' => $title,
+                    'error' => $e->getMessage()
+                ));
             }
         }
         
@@ -977,11 +1364,32 @@ class GoogleSheetsSync {
             }
         }
         
-        gi_log_error('sync_sheets_to_wp completed', array(
+        // 同期統計の記録
+        $this->record_sync_stats('sheets_to_wp', $synced_count, $error_count, $conflict_count);
+        
+        // 同期結果のサマリーを記録
+        $this->enhanced_log('sync_sheets_to_wp completed with enhanced conflict handling', array(
             'synced_count' => $synced_count,
-            'new_posts_updated' => count($new_post_ids_to_update)
-        ));
-        return $synced_count;
+            'conflict_count' => $conflict_count,
+            'error_count' => $error_count,
+            'new_posts_updated' => count($new_post_ids_to_update),
+            'conflicts' => $conflicts,
+            'execution_time_ms' => $this->get_execution_time()
+        ), 'info');
+        
+        // 競合やエラーがあった場合はアドミンに通知
+        if ($conflict_count > 0 || $error_count > 0) {
+            $this->notify_sync_issues($synced_count, $conflict_count, $error_count, $conflicts);
+        }
+        
+        return [
+            'success' => $error_count === 0,
+            'synced_count' => $synced_count,
+            'conflict_count' => $conflict_count,
+            'error_count' => $error_count,
+            'conflicts' => $conflicts,
+            'execution_time_ms' => $this->get_execution_time()
+        ];
         
         } catch (Exception $e) {
             gi_log_error('sync_sheets_to_wp failed', array(
@@ -990,6 +1398,107 @@ class GoogleSheetsSync {
                 'line' => $e->getLine()
             ));
             throw $e;
+        }
+    }
+    
+    /**
+     * 同期問題の通知
+     */
+    private function notify_sync_issues($synced_count, $conflict_count, $error_count, $conflicts) {
+        $admin_email = get_option('admin_email');
+        if (!$admin_email) return;
+        
+        $subject = '[' . get_bloginfo('name') . '] Google Sheets同期で問題が発生しました';
+        
+        $message = "Google Sheetsとの同期で以下の問題が発生しました:\n\n";
+        $message .= "成功: {$synced_count}件\n";
+        $message .= "競合: {$conflict_count}件\n";
+        $message .= "エラー: {$error_count}件\n\n";
+        
+        if (!empty($conflicts)) {
+            $message .= "競合の詳細:\n";
+            foreach ($conflicts as $conflict) {
+                $message .= "- ID: {$conflict['post_id']}, タイトル: {$conflict['title']}, アクション: {$conflict['action']}\n";
+            }
+        }
+        
+        $message .= "\n管理画面で詳細を確認してください: " . admin_url('admin.php?page=google-sheets-sync');
+        
+        wp_mail($admin_email, $subject, $message);
+    }
+    
+    /**
+     * WordPress同期競合の通知
+     */
+    private function notify_wp_sync_conflict($post_id, $post_title, $wp_modified, $sheet_timestamp) {
+        $admin_email = get_option('admin_email');
+        if (!$admin_email) return;
+        
+        $subject = '[' . get_bloginfo('name') . '] Google Sheets同期で競合が発生';
+        
+        $message = "WordPress投稿の同期で競合が発生しました:\n\n";
+        $message .= "投稿ID: {$post_id}\n";
+        $message .= "タイトル: {$post_title}\n";
+        $message .= "WordPress更新日時: " . date('Y-m-d H:i:s', $wp_modified) . "\n";
+        $message .= "シート更新日時: " . date('Y-m-d H:i:s', $sheet_timestamp) . "\n\n";
+        $message .= "シートの方が新しいため、WordPress側の更新をスキップしました。\n";
+        $message .= "手動で確認してください: " . get_edit_post_link($post_id, 'raw') . "\n";
+        
+        wp_mail($admin_email, $subject, $message);
+    }
+    
+    /**
+     * シートデータの範囲読み取り
+     */
+    private function read_sheet_data_range($range) {
+        try {
+            $client = $this->get_google_client();
+            $sheets = new Google_Service_Sheets($client);
+            $sheet_id = $this->get_sheet_id();
+            
+            $response = $sheets->spreadsheets_values->get($sheet_id, $range);
+            return $response->getValues() ?: [];
+        } catch (Exception $e) {
+            gi_log_error('Error reading sheet data range', array(
+                'range' => $range,
+                'error' => $e->getMessage()
+            ));
+            return [];
+        }
+    }
+    
+    /**
+     * シートの最終更新時刻を取得
+     */
+    private function get_sheet_last_modified($sheets, $sheet_id, $post_id) {
+        try {
+            // AE列（タイムスタンプ列）から該当投稿の最終更新時刻を取得
+            $range = $this->get_sheet_name() . '!AE:AE';
+            $response = $sheets->spreadsheets_values->get($sheet_id, $range);
+            $values = $response->getValues();
+            
+            if ($values) {
+                foreach ($values as $index => $row) {
+                    if (isset($row[0]) && !empty($row[0])) {
+                        // 対応する行のpost_idをチェック（A列）
+                        $id_range = $this->get_sheet_name() . '!A' . ($index + 1);
+                        $id_response = $sheets->spreadsheets_values->get($sheet_id, $id_range);
+                        $id_values = $id_response->getValues();
+                        
+                        if (isset($id_values[0][0]) && intval($id_values[0][0]) === $post_id) {
+                            return strtotime($row[0]);
+                        }
+                    }
+                }
+            }
+            
+            return null;
+        } catch (Exception $e) {
+            gi_log_error('Error getting sheet last modified time', array(
+                'post_id' => $post_id,
+                'error' => $e->getMessage()
+            ));
+            return null;
         }
     }
     
