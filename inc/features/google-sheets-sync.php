@@ -1349,15 +1349,14 @@ class GoogleSheetsSync {
                     wp_set_post_terms($post_id, $tags, 'grant_tag');
                 }
                 
-                // 新規ACFフィールドの同期 (X-AD列) ★31列対応 - 対象経費削除
+                // 新規ACFフィールドの同期 (X-AD列) ★30列対応 - 対象経費削除
                 $new_acf_fields = array(
                     'external_link' => isset($row[23]) ? $row[23] : '',           // X列: 外部リンク
                     'region_notes' => isset($row[24]) ? $row[24] : '',            // Y列: 地域に関する備考
                     'required_documents' => isset($row[25]) ? $row[25] : '',      // Z列: 必要書類
                     'adoption_rate' => isset($row[26]) ? floatval($row[26]) : 0,  // AA列: 採択率（%）
                     'application_difficulty' => isset($row[27]) ? $row[27] : 'normal', // AB列: 申請難易度
-                    // 'target_expenses' => 削除されました
-                    'subsidy_rate' => isset($row[28]) ? $row[28] : '',            // AC列: 補助率（元AD列）
+                    'subsidy_rate' => isset($row[28]) ? $row[28] : ''             // AC列: 補助率（元AD列）
                 );
                 
                 // 新規ACFフィールドを更新
