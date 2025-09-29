@@ -1496,16 +1496,62 @@ class GoogleSheetsSync {
      */
     private function read_sheet_data_range($range) {
         try {
-            $client = $this->get_google_client();
-            $sheets = new Google_Service_Sheets($client);
-            $sheet_id = $this->get_sheet_id();
+            $access_token = $this->get_access_token();
+            if (!$access_token) {
+                gi_log_error('read_sheet_data_range: No access token available');
+                return [];
+            }
             
-            $response = $sheets->spreadsheets_values->get($sheet_id, $range);
-            return $response->getValues() ?: [];
+            $url = self::SHEETS_API_URL . $this->spreadsheet_id . '/values/' . urlencode($range);
+            
+            $response = wp_remote_get($url, array(
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $access_token,
+                    'Content-Type' => 'application/json'
+                ),
+                'timeout' => 30
+            ));
+            
+            if (is_wp_error($response)) {
+                gi_log_error('Sheets Range Read Request Failed', array(
+                    'error' => $response->get_error_message(),
+                    'url' => $url,
+                    'range' => $range
+                ));
+                return [];
+            }
+            
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            
+            if ($response_code !== 200) {
+                gi_log_error('Sheets Range Read Failed - Bad Response Code', array(
+                    'response_code' => $response_code,
+                    'response_body' => $body,
+                    'range' => $range
+                ));
+                return [];
+            }
+            
+            $data = json_decode($body, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                gi_log_error('JSON decode failed for range read', array(
+                    'json_error' => json_last_error_msg(),
+                    'response_body' => $body,
+                    'range' => $range
+                ));
+                return [];
+            }
+            
+            return isset($data['values']) ? $data['values'] : [];
+            
         } catch (Exception $e) {
             gi_log_error('Error reading sheet data range', array(
                 'range' => $range,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
             ));
             return [];
         }
@@ -1514,23 +1560,24 @@ class GoogleSheetsSync {
     /**
      * シートの最終更新時刻を取得
      */
-    private function get_sheet_last_modified($sheets, $sheet_id, $post_id) {
+    private function get_sheet_last_modified($post_id) {
         try {
             // AD列（タイムスタンプ列）から該当投稿の最終更新時刻を取得
             $range = $this->get_sheet_name() . '!AD:AD';
-            $response = $sheets->spreadsheets_values->get($sheet_id, $range);
-            $values = $response->getValues();
+            $timestamp_values = $this->read_sheet_data_range($range);
             
-            if ($values) {
-                foreach ($values as $index => $row) {
-                    if (isset($row[0]) && !empty($row[0])) {
-                        // 対応する行のpost_idをチェック（A列）
-                        $id_range = $this->get_sheet_name() . '!A' . ($index + 1);
-                        $id_response = $sheets->spreadsheets_values->get($sheet_id, $id_range);
-                        $id_values = $id_response->getValues();
-                        
-                        if (isset($id_values[0][0]) && intval($id_values[0][0]) === $post_id) {
-                            return strtotime($row[0]);
+            if ($timestamp_values) {
+                // A列（ID列）から投稿IDを取得して対応する行を見つける
+                $id_range = $this->get_sheet_name() . '!A:A';
+                $id_values = $this->read_sheet_data_range($id_range);
+                
+                if ($id_values) {
+                    foreach ($id_values as $index => $id_row) {
+                        if (isset($id_row[0]) && intval($id_row[0]) === $post_id) {
+                            // 対応するタイムスタンプを取得
+                            if (isset($timestamp_values[$index][0]) && !empty($timestamp_values[$index][0])) {
+                                return strtotime($timestamp_values[$index][0]);
+                            }
                         }
                     }
                 }
@@ -1540,7 +1587,9 @@ class GoogleSheetsSync {
         } catch (Exception $e) {
             gi_log_error('Error getting sheet last modified time', array(
                 'post_id' => $post_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
             ));
             return null;
         }
