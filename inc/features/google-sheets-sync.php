@@ -1053,7 +1053,7 @@ class GoogleSheetsSync {
                 continue; // 不完全な行をスキップ
             }
             
-            // 各行の処理をtry-catchで囲む
+            // 各行の処理（エラーハンドリング付き）
             try {
                 $original_post_id = intval($row[0]); // 元のpost_id（空の場合は0）
                 $post_id = $original_post_id;
@@ -1233,13 +1233,16 @@ class GoogleSheetsSync {
                     $municipality_ids = [];
                     
                     foreach ($municipalities as $municipality_name) {
-                        if (empty($municipality_name)) continue;
+                        if (empty($municipality_name)) {
+                            continue;
+                        }
                         
                         // 既存の市町村を検索
                         $municipality_term = get_term_by('name', $municipality_name, 'grant_municipality');
                         
                         if (!$municipality_term && !empty($prefecture_ids)) {
                             // 市町村が存在しない場合、都道府県に紐づけて自動作成
+                            $created = false;
                             foreach ($prefecture_ids as $prefecture_id) {
                                 $prefecture_term = get_term($prefecture_id, 'grant_prefecture');
                                 if ($prefecture_term && !is_wp_error($prefecture_term)) {
@@ -1265,11 +1268,12 @@ class GoogleSheetsSync {
                                             'municipality_id' => $municipality_result['term_id'],
                                             'prefecture_id' => $prefecture_id
                                         ));
+                                        $created = true;
                                         break; // 最初の都道府県に紐づけ
                                     }
                                 }
                             }
-                        } else if ($municipality_term) {
+                        } elseif ($municipality_term) {
                             $municipality_ids[] = $municipality_term->term_id;
                         }
                     }
