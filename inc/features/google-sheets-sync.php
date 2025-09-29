@@ -392,11 +392,11 @@ class GoogleSheetsSync {
         $featured_image = get_the_post_thumbnail_url($post_id, 'full');
         $permalink = get_permalink($post_id);
         
-        // より詳細な助成金フィールドをチェック
-        $grant_amount_min = $this->get_field_with_fallback($post_id, ['amount_min', 'grant_amount_min', '助成金額_最小', '下限金額']);
-        $grant_amount_max = $this->get_field_with_fallback($post_id, ['amount_max', 'grant_amount_max', '助成金額_最大', '上限金額']);
-        $result_date = $this->get_field_with_fallback($post_id, ['result_date', 'announcement_date', '結果発表日']);
-        $application_period = $this->get_field_with_fallback($post_id, ['project_period', 'implementation_period', '事業実施期間']);
+        // より詳細な助成金フィールドをチェック（実際のフィールド名に対応）
+        $grant_amount_min = $this->get_field_with_fallback($post_id, ['min_amount', 'minimum_grant', 'amount_min', 'grant_amount_min', '最低金額', '下限金額', '助成金額_最小']);
+        $grant_amount_max = $this->get_field_with_fallback($post_id, ['max_amount', 'maximum_grant', 'amount_max', 'grant_amount_max', '最高金額', '上限金額', '助成金額_最大']);
+        $result_date = $this->get_field_with_fallback($post_id, ['notification_date', 'result_announcement_date', 'result_date', 'announcement_date', '通知日', '発表日', '結果発表日']);
+        $application_period = $this->get_field_with_fallback($post_id, ['project_duration', 'implementation_period', 'project_period', 'duration', '実施期間', '事業期間', '事業実施期間']);
         
         // デバッグログ: 重要フィールドの値を確認
         error_log("Google Sheets Sync Debug for post {$post_id}:");
@@ -425,18 +425,18 @@ class GoogleSheetsSync {
             // L-S列: 組織・申請情報（フォールバック強化）
             $this->get_field_with_fallback($post_id, ['organization', 'implementing_organization', '実施組織']),     // L列: 実施組織
             $this->get_field_with_fallback($post_id, ['org_type', 'organization_type', '組織タイプ']),             // M列: 組織タイプ
-            $this->get_field_with_fallback($post_id, ['target', 'target_description', '対象者・対象事業']),            // N列: 対象者・対象事業
-            $this->get_field_with_fallback($post_id, ['method', 'application_method', '申請方法']),            // O列: 申請方法
-            $this->get_field_with_fallback($post_id, ['contact', 'contact_info', '問い合わせ先']),                  // P列: 問い合わせ先
-            $this->get_field_with_fallback($post_id, ['url', 'official_url', '公式URL']),                  // Q列: 公式URL
-            $this->get_field_with_fallback($post_id, ['area_limit', 'area_restriction', '地域制限']),              // R列: 地域制限
+            $this->get_field_with_fallback($post_id, ['target_audience', 'eligible_applicants', 'target', 'target_description', '対象者', '応募対象', '対象者・対象事業']),            // N列: 対象者・対象事業
+            $this->get_field_with_fallback($post_id, ['application_procedure', 'how_to_apply', 'method', 'application_method', '申請手順', '応募方法', '申請方法']),            // O列: 申請方法
+            $this->get_field_with_fallback($post_id, ['inquiry', 'contact_details', 'contact', 'contact_info', '連絡先', '窓口', '問い合わせ先']),                  // P列: 問い合わせ先
+            $this->get_field_with_fallback($post_id, ['website', 'official_website', 'url', 'official_url', 'ホームページ', 'サイトURL', '公式URL']),                  // Q列: 公式URL
+            $this->get_field_with_fallback($post_id, ['regional_restriction', 'area_limitation', 'geographic_restriction', 'area_limit', 'area_restriction', '地域条件', '地域限定', '地域制限']),              // R列: 地域制限
             $this->get_field_with_fallback($post_id, ['status', 'application_status', '申請ステータス']),            // S列: 申請ステータス
             
             // T-X列: 追加情報（フォールバック強化）
-            $this->get_field_with_fallback($post_id, ['documents', 'required_documents', '必要書類']),            // T列: 必要書類
-            $this->get_field_with_fallback($post_id, ['rate', 'adoption_rate', '採択率']),                 // U列: 採択率（%）
-            $this->get_field_with_fallback($post_id, ['difficulty', 'difficulty_level', '申請難易度']),              // V列: 申請難易度
-            $this->get_field_with_fallback($post_id, ['expenses', 'eligible_expenses', '対象経費']),             // W列: 対象経費
+            $this->get_field_with_fallback($post_id, ['required_materials', 'application_documents', 'documents', 'required_documents', '提出書類', '申請書類', '必要書類']),            // T列: 必要書類
+            $this->get_field_with_fallback($post_id, ['success_rate', 'acceptance_rate', 'rate', 'adoption_rate', '採用率', '成功率', '採択率']),                 // U列: 採択率（%）
+            $this->get_field_with_fallback($post_id, ['complexity', 'difficulty_rating', 'difficulty', 'difficulty_level', '複雑度', '難しさ', '申請難易度']),              // V列: 申請難易度
+            $this->get_field_with_fallback($post_id, ['eligible_costs', 'covered_expenses', 'allowable_costs', 'expenses', 'eligible_expenses', '補助対象経費', '対象費用', '対象経費']),             // W列: 対象経費
             $this->get_field_with_fallback($post_id, ['subsidy', 'subsidy_rate', '補助率']),                  // X列: 補助率
             
             // Y-AD列: 追加の重要フィールド ★新規追加
