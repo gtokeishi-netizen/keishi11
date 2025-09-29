@@ -1026,9 +1026,8 @@ class GoogleSheetsSync {
      * 競合処理とエラーハンドリングを強化
      */
     public function sync_sheets_to_wp() {
-        try {
-            $this->start_timer();
-            $this->enhanced_log('Starting sync_sheets_to_wp with enhanced conflict handling', [], 'info');
+        $this->start_timer();
+        $this->enhanced_log('Starting sync_sheets_to_wp with enhanced conflict handling', [], 'info');
             
             // 同期開始時刻を記録（競合検出用）
             $sync_start_time = current_time('timestamp');
@@ -1036,7 +1035,14 @@ class GoogleSheetsSync {
             $sheet_data = $this->read_sheet_data();
             if (empty($sheet_data)) {
                 gi_log_error('No sheet data found');
-                return 0;
+                return [
+                    'success' => false,
+                    'synced_count' => 0,
+                    'conflict_count' => 0,
+                    'error_count' => 0,
+                    'conflicts' => [],
+                    'execution_time_ms' => 0
+                ];
             }
             
             gi_log_error('Sheet data retrieved', array('row_count' => count($sheet_data)));
@@ -1436,15 +1442,6 @@ class GoogleSheetsSync {
             'conflicts' => $conflicts,
             'execution_time_ms' => $this->get_execution_time()
         ];
-        
-        } catch (Exception $e) {
-            gi_log_error('sync_sheets_to_wp failed', array(
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ));
-            throw $e;
-        }
     }
     
     /**
