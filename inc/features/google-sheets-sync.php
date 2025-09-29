@@ -330,12 +330,23 @@ class GoogleSheetsSync {
     }
     
     /**
-     * 投稿データを準備
+     * 投稿データを準備（フィールドマッピング強化版）
      */
     private function prepare_post_data($post_id) {
         $post = get_post($post_id);
         if (!$post) {
+            error_log("Google Sheets Sync: Post not found for ID {$post_id}");
             return false;
+        }
+        
+        // デバッグ: 利用可能なACFフィールドをログ出力
+        if (function_exists('get_field_objects')) {
+            $acf_fields = get_field_objects($post_id);
+            if ($acf_fields) {
+                error_log("Google Sheets Sync: Available ACF fields for post {$post_id}: " . implode(', ', array_keys($acf_fields)));
+            } else {
+                error_log("Google Sheets Sync: No ACF fields found for post {$post_id}");
+            }
         }
         
         // カテゴリ取得
@@ -366,44 +377,85 @@ class GoogleSheetsSync {
             $tag_names[] = $tag->name;
         }
         
-        // ACFフィールド
-        $start_date = get_field('application_start_date', $post_id);
-        $end_date = get_field('application_end_date', $post_id);
+        // ACFフィールド（フォールバック強化）
+        $start_date = $this->get_field_with_fallback($post_id, ['start_date', 'application_start_date', 'grant_start_date', '募集開始日']);
+        $end_date = $this->get_field_with_fallback($post_id, ['end_date', 'application_end_date', 'grant_end_date', '募集終了日']);
+        
+        // フォールバック値の準備
+        $excerpt = $post->post_excerpt ?: wp_trim_words($post->post_content, 20, '...');
+        $public_status = ($post->post_status === 'publish') ? '公開' : '非公開';
+        
+        // デバッグログ: 重要フィールドの値を確認
+        error_log("Google Sheets Sync Debug for post {$post_id}:");
+        error_log("- Start Date: " . ($start_date ?: 'NOT FOUND'));
+        error_log("- End Date: " . ($end_date ?: 'NOT FOUND'));
+        error_log("- Categories: " . implode(', ', $category_names));
+        error_log("- Prefectures: " . implode(', ', $prefecture_names));
         
         return array(
             // A-K列: 基本フィールド（初期バージョン）
             $post_id,                                    // A列: ID
             $post->post_title,                           // B列: タイトル
-            wp_strip_all_tags($post->post_content),      // C列: 内容
+            $excerpt,                                    // C列: 内容（抜粋版）
             implode(', ', $category_names),              // D列: カテゴリ ★基本フィールド
             implode(', ', $prefecture_names),            // E列: 都道府県 ★基本フィールド
             implode(', ', $municipality_names),          // F列: 市町村 ★基本フィールド
             implode(', ', $tag_names),                   // G列: タグ ★基本フィールド
-            $start_date ? $start_date : '',              // H列: 募集開始日 ★基本フィールド
-            $end_date ? $end_date : '',                  // I列: 募集終了日 ★基本フィールド
-            $post->post_status,                          // J列: 公開状況 ★基本フィールド
-            $post->post_modified,                        // K列: 最終更新 ★基本フィールド
+            $start_date ?: '未設定',                      // H列: 募集開始日 ★基本フィールド
+            $end_date ?: '未設定',                        // I列: 募集終了日 ★基本フィールド
+            $public_status,                              // J列: 公開状況 ★基本フィールド
+            get_the_modified_date('Y-m-d H:i:s', $post_id), // K列: 最終更新 ★基本フィールド
             
-            // L-S列: 組織・申請情報
-            get_field('implementing_organization', $post_id) ?: '',     // L列: 実施組織
-            get_field('organization_type', $post_id) ?: '',             // M列: 組織タイプ
-            get_field('target_description', $post_id) ?: '',            // N列: 対象者・対象事業
-            get_field('application_method', $post_id) ?: '',            // O列: 申請方法
-            get_field('contact_info', $post_id) ?: '',                  // P列: 問い合わせ先
-            get_field('official_url', $post_id) ?: '',                  // Q列: 公式URL
-            get_field('area_restriction', $post_id) ?: '',              // R列: 地域制限
-            get_field('application_status', $post_id) ?: '',            // S列: 申請ステータス
+            // L-S列: 組織・申請情報（フォールバック強化）
+            $this->get_field_with_fallback($post_id, ['organization', 'implementing_organization', '実施組織']),     // L列: 実施組織
+            $this->get_field_with_fallback($post_id, ['org_type', 'organization_type', '組織タイプ']),             // M列: 組織タイプ
+            $this->get_field_with_fallback($post_id, ['target', 'target_description', '対象者・対象事業']),            // N列: 対象者・対象事業
+            $this->get_field_with_fallback($post_id, ['method', 'application_method', '申請方法']),            // O列: 申請方法
+            $this->get_field_with_fallback($post_id, ['contact', 'contact_info', '問い合わせ先']),                  // P列: 問い合わせ先
+            $this->get_field_with_fallback($post_id, ['url', 'official_url', '公式URL']),                  // Q列: 公式URL
+            $this->get_field_with_fallback($post_id, ['area_limit', 'area_restriction', '地域制限']),              // R列: 地域制限
+            $this->get_field_with_fallback($post_id, ['status', 'application_status', '申請ステータス']),            // S列: 申請ステータス
             
-            // T-X列: 追加情報
-            get_field('required_documents', $post_id) ?: '',            // T列: 必要書類
-            get_field('adoption_rate', $post_id) ?: '',                 // U列: 採択率（%）
-            get_field('difficulty_level', $post_id) ?: '',              // V列: 申請難易度
-            get_field('eligible_expenses', $post_id) ?: '',             // W列: 対象経費
-            get_field('subsidy_rate', $post_id) ?: '',                  // X列: 補助率
+            // T-X列: 追加情報（フォールバック強化）
+            $this->get_field_with_fallback($post_id, ['documents', 'required_documents', '必要書類']),            // T列: 必要書類
+            $this->get_field_with_fallback($post_id, ['rate', 'adoption_rate', '採択率']),                 // U列: 採択率（%）
+            $this->get_field_with_fallback($post_id, ['difficulty', 'difficulty_level', '申請難易度']),              // V列: 申請難易度
+            $this->get_field_with_fallback($post_id, ['expenses', 'eligible_expenses', '対象経費']),             // W列: 対象経費
+            $this->get_field_with_fallback($post_id, ['subsidy', 'subsidy_rate', '補助率']),                  // X列: 補助率
             
             // Y列: システム情報
             current_time('Y-m-d H:i:s')                                 // Y列: シート更新日
         );
+    }
+    
+    /**
+     * フィールド取得のフォールバック機能
+     * ACFフィールド、カスタムフィールド、ポストメタの順で検索
+     */
+    private function get_field_with_fallback($post_id, $field_names) {
+        foreach ($field_names as $field_name) {
+            // 1. ACFフィールドを試す
+            if (function_exists('get_field')) {
+                $value = get_field($field_name, $post_id);
+                if (!empty($value)) {
+                    return $value;
+                }
+            }
+            
+            // 2. ポストメタを試す
+            $value = get_post_meta($post_id, $field_name, true);
+            if (!empty($value)) {
+                return $value;
+            }
+            
+            // 3. アンダースコア付きフィールド名を試す
+            $value = get_post_meta($post_id, '_' . $field_name, true);
+            if (!empty($value)) {
+                return $value;
+            }
+        }
+        
+        return ''; // 全て見つからない場合は空文字を返す
     }
     
     /**
