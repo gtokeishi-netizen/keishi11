@@ -1028,31 +1028,31 @@ class GoogleSheetsSync {
     public function sync_sheets_to_wp() {
         $this->start_timer();
         $this->enhanced_log('Starting sync_sheets_to_wp with enhanced conflict handling', [], 'info');
-            
-            // 同期開始時刻を記録（競合検出用）
-            $sync_start_time = current_time('timestamp');
-            
-            $sheet_data = $this->read_sheet_data();
-            if (empty($sheet_data)) {
-                gi_log_error('No sheet data found');
-                return [
-                    'success' => false,
-                    'synced_count' => 0,
-                    'conflict_count' => 0,
-                    'error_count' => 0,
-                    'conflicts' => [],
-                    'execution_time_ms' => 0
-                ];
-            }
-            
-            gi_log_error('Sheet data retrieved', array('row_count' => count($sheet_data)));
-            
-            $headers = array_shift($sheet_data); // ヘッダー行を除去
-            $synced_count = 0;
-            $conflict_count = 0;
-            $error_count = 0;
-            $conflicts = [];
-            $new_post_ids_to_update = array(); // 新規作成された投稿のIDと行番号を記録
+        
+        // 同期開始時刻を記録（競合検出用）
+        $sync_start_time = current_time('timestamp');
+        
+        $sheet_data = $this->read_sheet_data();
+        if (empty($sheet_data)) {
+            gi_log_error('No sheet data found');
+            return [
+                'success' => false,
+                'synced_count' => 0,
+                'conflict_count' => 0,
+                'error_count' => 0,
+                'conflicts' => [],
+                'execution_time_ms' => 0
+            ];
+        }
+        
+        gi_log_error('Sheet data retrieved', array('row_count' => count($sheet_data)));
+        
+        $headers = array_shift($sheet_data); // ヘッダー行を除去
+        $synced_count = 0;
+        $conflict_count = 0;
+        $error_count = 0;
+        $conflicts = [];
+        $new_post_ids_to_update = array(); // 新規作成された投稿のIDと行番号を記録
         
         foreach ($sheet_data as $row_index => $row) {
             if (empty($row) || count($row) < 5) {
@@ -1060,12 +1060,12 @@ class GoogleSheetsSync {
             }
             
             // 各行の処理
-                $original_post_id = intval($row[0]); // 元のpost_id（空の場合は0）
-                $post_id = $original_post_id;
-                $title = isset($row[1]) ? sanitize_text_field($row[1]) : '';
-                $content = isset($row[2]) ? wp_kses_post($row[2]) : '';
-                $excerpt = isset($row[3]) ? sanitize_textarea_field($row[3]) : '';
-                $status = isset($row[4]) ? sanitize_text_field($row[4]) : 'draft';
+            $original_post_id = intval($row[0]); // 元のpost_id（空の場合は0）
+            $post_id = $original_post_id;
+            $title = isset($row[1]) ? sanitize_text_field($row[1]) : '';
+            $content = isset($row[2]) ? wp_kses_post($row[2]) : '';
+            $excerpt = isset($row[3]) ? sanitize_textarea_field($row[3]) : '';
+            $status = isset($row[4]) ? sanitize_text_field($row[4]) : 'draft';
                 
                 // 削除されたアイテムの処理
                 if ($status === 'deleted') {
