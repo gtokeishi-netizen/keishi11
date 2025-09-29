@@ -1028,7 +1028,7 @@ class GoogleSheetsSync {
     public function sync_sheets_to_wp() {
         try {
             $this->start_timer();
-        $this->enhanced_log('Starting sync_sheets_to_wp with enhanced conflict handling', [], 'info');
+            $this->enhanced_log('Starting sync_sheets_to_wp with enhanced conflict handling', [], 'info');
             
             // 同期開始時刻を記録（競合検出用）
             $sync_start_time = current_time('timestamp');
@@ -1053,8 +1053,7 @@ class GoogleSheetsSync {
                 continue; // 不完全な行をスキップ
             }
             
-            // 各行の処理（エラーハンドリング付き）
-            try {
+            // 各行の処理
                 $original_post_id = intval($row[0]); // 元のpost_id（空の場合は0）
                 $post_id = $original_post_id;
                 $title = isset($row[1]) ? sanitize_text_field($row[1]) : '';
@@ -1377,16 +1376,6 @@ class GoogleSheetsSync {
                 // 同期タイムスタンプを更新
                 update_post_meta($post_id, '_sheets_last_sync', $sync_start_time);
                 $synced_count++;
-                
-            } catch (Exception $e) {
-                $error_count++;
-                gi_log_error('Error processing sheet row', array(
-                    'row_index' => $row_index,
-                    'post_id' => $post_id,
-                    'title' => $title,
-                    'error' => $e->getMessage()
-                ));
-            }
         }
         
         // 新規作成された投稿のIDをスプレッドシートに書き戻し
