@@ -1053,6 +1053,7 @@ class GoogleSheetsSync {
                 continue; // 不完全な行をスキップ
             }
             
+            // 各行の処理をtry-catchで囲む
             try {
                 $original_post_id = intval($row[0]); // 元のpost_id（空の場合は0）
                 $post_id = $original_post_id;
@@ -1125,27 +1126,21 @@ class GoogleSheetsSync {
                 // 既存投稿の更新前にバックアップを作成
                 $this->create_sync_backup($post_id);
                 
-                try {
-                    // 既存投稿を更新
-                    $updated_post = array(
-                        'ID' => $post_id,
-                        'post_title' => $title,
-                        'post_content' => $content,
-                        'post_excerpt' => $excerpt,
-                        'post_status' => $status,
-                    );
-                    
-                    $result = wp_update_post($updated_post);
-                    if (is_wp_error($result)) {
-                        throw new Exception('Failed to update post: ' . $result->get_error_message());
-                    }
-                    
-                    gi_log_error('Updated existing post', array('post_id' => $post_id, 'title' => $title));
-                } catch (Exception $update_error) {
-                    // 更新に失敗した場合はロールバック
-                    $this->rollback_sync($post_id);
-                    throw $update_error;
+                // 既存投稿を更新
+                $updated_post = array(
+                    'ID' => $post_id,
+                    'post_title' => $title,
+                    'post_content' => $content,
+                    'post_excerpt' => $excerpt,
+                    'post_status' => $status,
+                );
+                
+                $result = wp_update_post($updated_post);
+                if (is_wp_error($result)) {
+                    throw new Exception('Failed to update post: ' . $result->get_error_message());
                 }
+                
+                gi_log_error('Updated existing post', array('post_id' => $post_id, 'title' => $title));
             } else {
                 // 新規投稿を作成
                 $new_post = array(
