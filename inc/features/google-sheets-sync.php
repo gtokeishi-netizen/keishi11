@@ -385,12 +385,28 @@ class GoogleSheetsSync {
         $excerpt = $post->post_excerpt ?: wp_trim_words($post->post_content, 20, '...');
         $public_status = ($post->post_status === 'publish') ? '公開' : '非公開';
         
+        // 追加で取得すべき基本フィールド
+        $author_name = get_the_author_meta('display_name', $post->post_author);
+        $publish_date = $post->post_date;
+        $excerpt_manual = get_field('excerpt', $post_id) ?: get_field('summary', $post_id) ?: get_field('概要', $post_id);
+        $featured_image = get_the_post_thumbnail_url($post_id, 'full');
+        $permalink = get_permalink($post_id);
+        
+        // より詳細な助成金フィールドをチェック
+        $grant_amount_min = $this->get_field_with_fallback($post_id, ['amount_min', 'grant_amount_min', '助成金額_最小', '下限金額']);
+        $grant_amount_max = $this->get_field_with_fallback($post_id, ['amount_max', 'grant_amount_max', '助成金額_最大', '上限金額']);
+        $result_date = $this->get_field_with_fallback($post_id, ['result_date', 'announcement_date', '結果発表日']);
+        $application_period = $this->get_field_with_fallback($post_id, ['project_period', 'implementation_period', '事業実施期間']);
+        
         // デバッグログ: 重要フィールドの値を確認
         error_log("Google Sheets Sync Debug for post {$post_id}:");
         error_log("- Start Date: " . ($start_date ?: 'NOT FOUND'));
         error_log("- End Date: " . ($end_date ?: 'NOT FOUND'));
         error_log("- Categories: " . implode(', ', $category_names));
         error_log("- Prefectures: " . implode(', ', $prefecture_names));
+        error_log("- Author: " . $author_name);
+        error_log("- Amount Min: " . ($grant_amount_min ?: 'NOT FOUND'));
+        error_log("- Amount Max: " . ($grant_amount_max ?: 'NOT FOUND'));
         
         return array(
             // A-K列: 基本フィールド（初期バージョン）
@@ -423,8 +439,19 @@ class GoogleSheetsSync {
             $this->get_field_with_fallback($post_id, ['expenses', 'eligible_expenses', '対象経費']),             // W列: 対象経費
             $this->get_field_with_fallback($post_id, ['subsidy', 'subsidy_rate', '補助率']),                  // X列: 補助率
             
-            // Y列: システム情報
-            current_time('Y-m-d H:i:s')                                 // Y列: シート更新日
+            // Y-AD列: 追加の重要フィールド ★新規追加
+            $author_name,                                                // Y列: 作成者
+            $publish_date,                                               // Z列: 公開日
+            $excerpt_manual ?: '',                                       // AA列: 手動抜粋
+            $featured_image ?: '',                                       // AB列: アイキャッチ画像URL
+            $permalink,                                                  // AC列: パーマリンク
+            $grant_amount_min ?: '',                                     // AD列: 助成金額（最小）
+            $grant_amount_max ?: '',                                     // AE列: 助成金額（最大）
+            $result_date ?: '',                                          // AF列: 結果発表日
+            $application_period ?: '',                                   // AG列: 事業実施期間
+            
+            // AH列: システム情報
+            current_time('Y-m-d H:i:s')                                 // AH列: シート更新日
         );
     }
     
@@ -478,10 +505,10 @@ class GoogleSheetsSync {
             if (!empty($row[0]) && intval($row[0]) === $post_id) {
                 $sheet_name = $this->get_sheet_name();
                 $row_index = $index + 1;
-                $range = $sheet_name . '!A' . $row_index . ':Y' . $row_index;
+                $range = $sheet_name . '!A' . $row_index . ':AH' . $row_index;
                 
-                // 行を空にする（25列に対応）
-                $this->write_sheet_data($range, array(array_fill(0, 25, '')));
+                // 行を空にする（34列に対応）
+                $this->write_sheet_data($range, array(array_fill(0, 34, '')));
                 break;
             }
         }

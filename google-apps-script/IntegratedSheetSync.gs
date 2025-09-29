@@ -862,8 +862,19 @@ function convertRowDataToStructured(rowData) {
     eligible_expenses: rowData[22] || '',          // W列: 対象経費
     subsidy_rate: rowData[23] || '',               // X列: 補助率
     
+    // 追加情報（Y-AG列）★新規追加フィールド
+    author: rowData[24] || '',                     // Y列: 作成者
+    publish_date: rowData[25] || '',               // Z列: 公開日
+    manual_excerpt: rowData[26] || '',             // AA列: 手動抜粋
+    featured_image: rowData[27] || '',             // AB列: アイキャッチ画像
+    permalink: rowData[28] || '',                  // AC列: パーマリンク
+    amount_min: rowData[29] || '',                 // AD列: 助成金額（最小）
+    amount_max: rowData[30] || '',                 // AE列: 助成金額（最大）
+    result_date: rowData[31] || '',                // AF列: 結果発表日
+    project_period: rowData[32] || '',             // AG列: 事業実施期間
+    
     // システム情報
-    sheet_updated: rowData[24] || ''               // Y列: シート更新日
+    sheet_updated: rowData[33] || ''               // AH列: シート更新日
   };
 }
 
@@ -1092,7 +1103,16 @@ function setupHeaders(sheet) {
     '申請難易度',            // V列
     '対象経費',              // W列
     '補助率',                // X列
-    'シート更新日'           // Y列
+    '作成者',                // Y列 ★新規追加
+    '公開日',                // Z列 ★新規追加
+    '手動抜粋',              // AA列 ★新規追加
+    'アイキャッチ画像',      // AB列 ★新規追加
+    'パーマリンク',          // AC列 ★新規追加
+    '助成金額（最小）',      // AD列 ★新規追加
+    '助成金額（最大）',      // AE列 ★新規追加
+    '結果発表日',            // AF列 ★新規追加
+    '事業実施期間',          // AG列 ★新規追加
+    'シート更新日'           // AH列
   ];
 
   const headerRange = sheet.getRange(1, 1, 1, headers.length);
@@ -2469,20 +2489,22 @@ function fixMunicipalityValidation() {
  */
 function checkHeaderIntegrity() {
   try {
-    // setupHeaders関数のヘッダー配列を取得（初期バージョン基本フィールド）
+    // setupHeaders関数のヘッダー配列を取得（拡張版フィールド）
     const headers = [
       'ID', 'タイトル', '内容', 'カテゴリ', '都道府県', '市町村', 'タグ', '募集開始日', '募集終了日',
       '公開状況', '最終更新', '実施組織', '組織タイプ', '対象者・対象事業', '申請方法', '問い合わせ先', 
       '公式URL', '地域制限', '申請ステータス', '必要書類', '採択率（%）', '申請難易度', '対象経費', 
-      '補助率', 'シート更新日'
+      '補助率', '作成者', '公開日', '手動抜粋', 'アイキャッチ画像', 'パーマリンク', '助成金額（最小）',
+      '助成金額（最大）', '結果発表日', '事業実施期間', 'シート更新日'
     ];
     
-    // convertRowDataToStructured関数のマッピングキー（初期バージョン対応）
+    // convertRowDataToStructured関数のマッピングキー（拡張版対応）
     const expectedMappings = [
       'id', 'title', 'content', 'category', 'prefecture', 'municipality', 'tags', 'start_date', 'end_date',
       'status', 'updated_date', 'organization', 'organization_type', 'target_description', 'application_method', 'contact_info',
       'official_url', 'area_restriction', 'application_status', 'required_documents', 'adoption_rate', 'difficulty_level', 'eligible_expenses',
-      'subsidy_rate', 'sheet_updated'
+      'subsidy_rate', 'author', 'publish_date', 'manual_excerpt', 'featured_image', 'permalink', 'amount_min',
+      'amount_max', 'result_date', 'project_period', 'sheet_updated'
     ];
     
     // 整合性チェック
