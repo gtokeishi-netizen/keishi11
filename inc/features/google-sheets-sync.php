@@ -427,7 +427,7 @@ class GoogleSheetsSync {
         }
         
         if (!$range) {
-            $range = $this->get_sheet_name() . '!A:AE'; // 全データを取得（AE列まで）31列対応
+            $range = $this->get_sheet_name() . '!A:AD'; // 全データを取得（AD列まで）30列対応
         }
         
         gi_log_error('Reading from sheets', array(
@@ -680,7 +680,7 @@ class GoogleSheetsSync {
                 $row[] = is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : (string)$value;
             }
             
-            // AE列: シート更新日
+            // AD列: シート更新日
             $row[] = current_time('mysql');
             
             gi_log_error('Post converted to sheet row successfully', array('post_id' => $post_id, 'columns' => count($row)));
@@ -735,7 +735,7 @@ class GoogleSheetsSync {
                 '申請難易度 (easy/normal/hard/very_hard)', // AB列 - 難易度評価
                 '対象経費',                              // AC列 - 補助対象経費の詳細
                 '補助率 (例: 2/3, 50%)',                // AD列 - 補助率・補助割合
-                'シート更新日 (自動入力)'                // AE列 - 最終同期日時
+                'シート更新日 (自動入力)'                // AD列 - 最終同期日時
             );
             
             gi_log_error('Headers array created', array('count' => count($headers)));
@@ -913,8 +913,8 @@ class GoogleSheetsSync {
                 $wp_modified = strtotime($post->post_modified_gmt);
                 $sheets_last_sync = get_post_meta($post_id, '_sheets_last_sync', true);
                 
-                // シートから現在のタイムスタンプを取得（AE列）
-                $timestamp_range = $this->sheet_name . '!AE' . $row_number;
+                // シートから現在のタイムスタンプを取得（AD列）
+                $timestamp_range = $this->sheet_name . '!AD' . $row_number;
                 try {
                     $sheet_data_response = $this->read_sheet_data_range($timestamp_range);
                     $sheet_timestamp = null;
@@ -943,14 +943,14 @@ class GoogleSheetsSync {
                     ));
                 }
                 
-                // 既存行を更新 - 31列対応（AE列まで） + タイムスタンプ更新
-                $row_data[30] = current_time('Y-m-d H:i:s'); // AE列にタイムスタンプを追加
-                $range = $this->sheet_name . '!A' . $row_number . ':AE' . $row_number;
+                // 既存行を更新 - 30列対応（AD列まで） + タイムスタンプ更新  
+                $row_data[29] = current_time('Y-m-d H:i:s'); // AD列にタイムスタンプを追加
+                $range = $this->sheet_name . '!A' . $row_number . ':AD' . $row_number;
                 gi_log_error('Updating existing row with conflict check', array('post_id' => $post_id, 'range' => $range));
                 $success = $this->write_sheet_data($range, array($row_data));
             } else {
                 // 新しい行を追加 - タイムスタンプ付き
-                $row_data[30] = current_time('Y-m-d H:i:s'); // AE列にタイムスタンプを追加
+                $row_data[29] = current_time('Y-m-d H:i:s'); // AD列にタイムスタンプを追加
                 gi_log_error('Appending new row with timestamp', array('post_id' => $post_id));
                 $success = $this->append_sheet_data($row_data);
             }
@@ -1079,8 +1079,8 @@ class GoogleSheetsSync {
                         
                         // WordPressでの最後の同期後に更新があった場合は競合の可能性
                         if ($sheets_last_sync && $wp_modified > $sheets_last_sync) {
-                            // シートデータのタイムスタンプをチェック（AE列想定）
-                            $sheet_timestamp = isset($row[30]) && !empty($row[30]) ? strtotime($row[30]) : null;
+                            // シートデータのタイムスタンプをチェック（AD列想定）
+                            $sheet_timestamp = isset($row[29]) && !empty($row[29]) ? strtotime($row[29]) : null;
                             
                             if ($sheet_timestamp && $sheet_timestamp < $wp_modified) {
                                 // WordPressの方が新しい場合は競合として記録
@@ -1210,29 +1210,88 @@ class GoogleSheetsSync {
                 // ★完全連携: スプレッドシートからタクソノミーデータを同期
                 
                 // 都道府県を設定（T列のデータから） ★完全連携
+                $prefecture_ids = [];
                 if (isset($row[19]) && !empty($row[19])) {
                     $prefectures = array_map('trim', explode(',', $row[19]));
                     $prefecture_result = wp_set_post_terms($post_id, $prefectures, 'grant_prefecture');
+                    
+                    // 都道府県IDを取得（市町村連動用）
+                    foreach ($prefectures as $prefecture_name) {
+                        $prefecture_term = get_term_by('name', $prefecture_name, 'grant_prefecture');
+                        if ($prefecture_term) {
+                            $prefecture_ids[] = $prefecture_term->term_id;
+                        }
+                    }
                     
                     gi_log_error('Prefecture sync result', array(
                         'post_id' => $post_id,
                         'raw_prefecture_data' => $row[19],
                         'prefectures_array' => $prefectures,
+                        'prefecture_ids' => $prefecture_ids,
                         'set_terms_result' => $prefecture_result
                     ));
                 }
                 
-                // 市町村を設定（U列のデータから） ★完全連携
+                // 市町村を設定（U列のデータから）★完全連携 - 都道府県連動型
                 if (isset($row[20]) && !empty($row[20])) {
                     $municipalities = array_map('trim', explode(',', $row[20]));
-                    $municipality_result = wp_set_post_terms($post_id, $municipalities, 'grant_municipality');
+                    $municipality_ids = [];
                     
-                    gi_log_error('Municipality sync result', array(
-                        'post_id' => $post_id,
-                        'raw_municipality_data' => $row[20],
-                        'municipalities_array' => $municipalities,
-                        'set_terms_result' => $municipality_result
-                    ));
+                    foreach ($municipalities as $municipality_name) {
+                        if (empty($municipality_name)) continue;
+                        
+                        // 既存の市町村を検索
+                        $municipality_term = get_term_by('name', $municipality_name, 'grant_municipality');
+                        
+                        if (!$municipality_term && !empty($prefecture_ids)) {
+                            // 市町村が存在しない場合、都道府県に紐づけて自動作成
+                            foreach ($prefecture_ids as $prefecture_id) {
+                                $prefecture_term = get_term($prefecture_id, 'grant_prefecture');
+                                if ($prefecture_term && !is_wp_error($prefecture_term)) {
+                                    $municipality_result = wp_insert_term(
+                                        $municipality_name,
+                                        'grant_municipality',
+                                        array(
+                                            'description' => $prefecture_term->name . 'の' . $municipality_name,
+                                            'slug' => sanitize_title($prefecture_term->name . '-' . $municipality_name)
+                                        )
+                                    );
+                                    
+                                    if (!is_wp_error($municipality_result)) {
+                                        // 都道府県との関連付けを保存
+                                        add_term_meta($municipality_result['term_id'], 'prefecture_id', $prefecture_id);
+                                        add_term_meta($municipality_result['term_id'], 'prefecture_name', $prefecture_term->name);
+                                        
+                                        $municipality_ids[] = $municipality_result['term_id'];
+                                        
+                                        gi_log_error('Auto-created municipality with prefecture link', array(
+                                            'municipality_name' => $municipality_name,
+                                            'prefecture_name' => $prefecture_term->name,
+                                            'municipality_id' => $municipality_result['term_id'],
+                                            'prefecture_id' => $prefecture_id
+                                        ));
+                                        break; // 最初の都道府県に紐づけ
+                                    }
+                                }
+                            }
+                        } else if ($municipality_term) {
+                            $municipality_ids[] = $municipality_term->term_id;
+                        }
+                    }
+                    
+                    // 市町村をポストに設定
+                    if (!empty($municipality_ids)) {
+                        $municipality_result = wp_set_post_terms($post_id, $municipality_ids, 'grant_municipality');
+                        
+                        gi_log_error('Municipality sync result with prefecture linking', array(
+                            'post_id' => $post_id,
+                            'raw_municipality_data' => $row[20],
+                            'municipalities_array' => $municipalities,
+                            'municipality_ids' => $municipality_ids,
+                            'linked_prefecture_ids' => $prefecture_ids,
+                            'set_terms_result' => $municipality_result
+                        ));
+                    }
                 }
                 
                 // カテゴリを設定（V列のデータから） ★完全連携 - 自動作成対応
@@ -1295,15 +1354,15 @@ class GoogleSheetsSync {
                     wp_set_post_terms($post_id, $tags, 'grant_tag');
                 }
                 
-                // 新規ACFフィールドの同期 (X-AD列) ★31列対応
+                // 新規ACFフィールドの同期 (X-AD列) ★31列対応 - 対象経費削除
                 $new_acf_fields = array(
                     'external_link' => isset($row[23]) ? $row[23] : '',           // X列: 外部リンク
                     'region_notes' => isset($row[24]) ? $row[24] : '',            // Y列: 地域に関する備考
                     'required_documents' => isset($row[25]) ? $row[25] : '',      // Z列: 必要書類
                     'adoption_rate' => isset($row[26]) ? floatval($row[26]) : 0,  // AA列: 採択率（%）
                     'application_difficulty' => isset($row[27]) ? $row[27] : 'normal', // AB列: 申請難易度
-                    'target_expenses' => isset($row[28]) ? $row[28] : '',         // AC列: 対象経費
-                    'subsidy_rate' => isset($row[29]) ? $row[29] : '',            // AD列: 補助率
+                    // 'target_expenses' => 削除されました
+                    'subsidy_rate' => isset($row[28]) ? $row[28] : '',            // AC列: 補助率（元AD列）
                 );
                 
                 // 新規ACFフィールドを更新
@@ -1472,8 +1531,8 @@ class GoogleSheetsSync {
      */
     private function get_sheet_last_modified($sheets, $sheet_id, $post_id) {
         try {
-            // AE列（タイムスタンプ列）から該当投稿の最終更新時刻を取得
-            $range = $this->get_sheet_name() . '!AE:AE';
+            // AD列（タイムスタンプ列）から該当投稿の最終更新時刻を取得
+            $range = $this->get_sheet_name() . '!AD:AD';
             $response = $sheets->spreadsheets_values->get($sheet_id, $range);
             $values = $response->getValues();
             
@@ -1908,7 +1967,7 @@ class GoogleSheetsSync {
                     'step3' => '✅ 31列全体のバリデーション設定が自動実行されます',
                     'step4' => '🎨 設定完了後、選択肢フィールド（E, M, O, R, S, AB列）が青色背景で表示',
                     'step5' => '🔢 数値フィールド（I, AA列）に範囲制限が適用',
-                    'step6' => '🔒 読み取り専用フィールド（A, F, G, AE列）がグレー表示',
+                    'step6' => '🔒 読み取り専用フィールド（A, F, G, AD列）がグレー表示',
                     'step7' => '🌐 URL フィールド（Q, X列）にリンク検証が追加'
                 ),
                 'validation_features' => array(
@@ -2143,21 +2202,16 @@ class GoogleSheetsSync {
                 'choices' => array('easy', 'normal', 'hard', 'very_hard'),
                 'description' => '申請の難易度レベル（簡単〜非常に困難）'
             ),
+            // AC列: 対象経費フィールドは削除され、補助率が前へ移動
             'AC' => array(
-                'field_name' => '対象経費',
-                'field_key' => 'target_expenses',
-                'type' => 'textarea',
-                'description' => '補助対象となる経費の詳細'
-            ),
-            'AD' => array(
                 'field_name' => '補助率',
                 'field_key' => 'subsidy_rate',
                 'type' => 'text',
                 'description' => '補助率・補助割合（例：2/3、50%）'
             ),
             
-            // システム情報 (AE)
-            'AE' => array(
+            // システム情報 (AD列へ移動)
+            'AD' => array(
                 'field_name' => 'シート更新日 (自動入力)',
                 'field_key' => 'sheet_updated_at',
                 'type' => 'readonly',
@@ -2354,7 +2408,7 @@ class GoogleSheetsSync {
         $results['field_analysis'] = array(
             'tested_acf_fields' => count($critical_test_fields),
             'tested_taxonomy_fields' => count($taxonomy_fields),
-            'total_columns_available' => 31, // AE列まで
+            'total_columns_available' => 30, // AD列まで
             'coverage_percentage' => round(((count($critical_test_fields) + count($taxonomy_fields)) / 31) * 100, 2)
         );
         

@@ -220,9 +220,7 @@ class GI_Enhanced_AI_Generator {
             $context_parts[] = "助成金対象: {$data['grant_target']}";
         }
         
-        if (!empty($data['target_expenses'])) {
-            $context_parts[] = "対象経費: {$data['target_expenses']}";
-        }
+        // 対象経費フィールドは削除されました
         
         // 難易度・成功率
         if (!empty($data['difficulty'])) {

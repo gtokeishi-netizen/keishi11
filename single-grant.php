@@ -52,8 +52,8 @@ $grant_data = array(
     'required_documents' => get_field('required_documents', $post_id) ?: '', // Z列
     'adoption_rate' => floatval(get_field('adoption_rate', $post_id)),       // AA列
     'application_difficulty' => get_field('application_difficulty', $post_id) ?: 'normal', // AB列
-    'target_expenses' => get_field('target_expenses', $post_id) ?: '',       // AC列
-    'subsidy_rate' => get_field('subsidy_rate', $post_id) ?: '',            // AD列
+    // 'target_expenses' => 削除されました（ユーザー要求により）
+    'subsidy_rate' => get_field('subsidy_rate', $post_id) ?: '',            // AC列（元AD列）
     
     // 管理・統計情報
     'is_featured' => get_field('is_featured', $post_id) ?: false,
@@ -995,18 +995,7 @@ update_post_meta($post_id, 'views_count', $grant_data['views_count']);
             </section>
             <?php endif; ?>
             
-            <?php if ($grant_data['target_expenses']): ?>
-            <!-- Target Expenses (31列対応 - AC列) -->
-            <section class="content-section">
-                <header class="section-header">
-                    <div class="section-icon">💰</div>
-                    <h2 class="section-title">対象経費</h2>
-                </header>
-                <div class="section-content">
-                    <?php echo wp_kses_post($grant_data['target_expenses']); ?>
-                </div>
-            </section>
-            <?php endif; ?>
+            <!-- 対象経費セクションは削除されました（ユーザー要求により） -->
             
             <?php if ($grant_data['required_documents']): ?>
             <!-- Required Documents (31列対応 - Z列) -->

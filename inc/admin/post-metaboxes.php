@@ -160,48 +160,138 @@ class GrantPostMetaboxes {
     }
     
     /**
-     * 対象市町村メタボックス（WordPress標準タクソノミー）
+     * 対象市町村メタボックス（都道府県連動型）
      */
     public function render_municipality_metabox($post) {
-        $municipalities = get_terms(array(
-            'taxonomy' => 'grant_municipality',
-            'hide_empty' => false,
-            'orderby' => 'name'
-        ));
-        
         $post_municipalities = wp_get_post_terms($post->ID, 'grant_municipality', array('fields' => 'ids'));
+        $post_prefectures = wp_get_post_terms($post->ID, 'grant_prefecture', array('fields' => 'ids'));
         
         ?>
         <div class="grant-metabox-content">
-            <div style="margin-bottom: 10px;">
-                <input type="text" id="municipality_search" placeholder="市町村を検索..." style="width: 100%;">
+            <div style="margin-bottom: 15px; padding: 10px; background: #f0f8ff; border-left: 4px solid #0073aa;">
+                <strong>📍 都道府県連動:</strong> まず都道府県を選択してから市町村を選んでください
             </div>
             
-            <div id="grant-municipality-selection" style="max-height: 250px; overflow-y: auto;">
-                <?php if (!empty($municipalities) && !is_wp_error($municipalities)): ?>
-                    <?php foreach ($municipalities as $municipality): ?>
-                        <label style="display: block; margin-bottom: 6px;" class="municipality-option">
-                            <input type="checkbox" 
-                                   name="grant_municipalities[]" 
-                                   value="<?php echo esc_attr($municipality->term_id); ?>"
-                                   <?php checked(in_array($municipality->term_id, $post_municipalities)); ?>>
-                            <?php echo esc_html($municipality->name); ?>
-                            <span style="color: #666;">（<?php echo $municipality->count; ?>件）</span>
-                        </label>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p style="color: #666;">市町村データがありません。</p>
-                <?php endif; ?>
+            <div style="margin-bottom: 10px;">
+                <input type="text" id="municipality_search" placeholder="市町村を検索..." style="width: 100%;">
+                <small style="color: #666;">選択された都道府県の市町村のみ表示されます</small>
+            </div>
+            
+            <div id="grant-municipality-selection" style="max-height: 250px; overflow-y: auto; border: 1px solid #ddd; padding: 10px;">
+                <div id="municipality-loading" style="text-align: center; padding: 20px; color: #666;">
+                    都道府県を選択すると、その市町村が表示されます
+                </div>
                 
-                <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
-                    <input type="text" id="new_municipality" placeholder="新しい市町村名" style="width: 70%;">
-                    <button type="button" id="add_municipality" class="button button-small">追加</button>
-                    <small style="display: block; margin-top: 5px; color: #666;">
-                        例：新宿区、渋谷区、札幌市、福岡市
-                    </small>
+                <div id="municipality-checkboxes" style="display: none;">
+                    <!-- 市町村チェックボックスがここに動的に表示される -->
                 </div>
             </div>
+            
+            <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
+                <input type="text" id="new_municipality" placeholder="新しい市町村名" style="width: 70%;">
+                <button type="button" id="add_municipality" class="button button-small">追加</button>
+                <small style="display: block; margin-top: 5px; color: #666;">
+                        例：新宿区、渋谷区、札幌市、福岡市
+                    選択した都道府県に新しい市町村を追加します
+                </small>
+            </div>
+            
+            <!-- 隠しフィールド：選択された市町村 -->
+            <div id="selected-municipalities">
+                <?php if (!empty($post_municipalities)): ?>
+                    <?php foreach ($post_municipalities as $municipality_id): ?>
+                        <input type="hidden" name="grant_municipalities[]" value="<?php echo esc_attr($municipality_id); ?>">
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
         </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            // 都道府県選択変更時の市町村更新
+            $(document).on('change', 'input[name="grant_prefectures[]"]', function() {
+                updateMunicipalityList();
+            });
+            
+            // 市町村リストの更新関数
+            function updateMunicipalityList() {
+                var selectedPrefectures = [];
+                $('input[name="grant_prefectures[]"]:checked').each(function() {
+                    selectedPrefectures.push($(this).val());
+                });
+                
+                if (selectedPrefectures.length === 0) {
+                    $('#municipality-loading').show().text('都道府県を選択すると、その市町村が表示されます');
+                    $('#municipality-checkboxes').hide();
+                    return;
+                }
+                
+                $('#municipality-loading').show().text('市町村を読み込み中...');
+                $('#municipality-checkboxes').hide();
+                
+                // Ajax呼び出しで都道府県に紐づく市町村を取得
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'get_municipalities_by_prefectures',
+                        prefecture_ids: selectedPrefectures,
+                        nonce: '<?php echo wp_create_nonce('gi_admin_nonce'); ?>'
+                    },
+                    success: function(response) {
+                        if (response.success && response.data.length > 0) {
+                            var html = '';
+                            var selectedMunicipalities = getSelectedMunicipalities();
+                            
+                            $.each(response.data, function(index, municipality) {
+                                var checked = selectedMunicipalities.includes(municipality.id.toString()) ? 'checked' : '';
+                                html += '<label style="display: block; margin-bottom: 6px;" class="municipality-option">';
+                                html += '<input type="checkbox" name="grant_municipalities[]" value="' + municipality.id + '" ' + checked + '>';
+                                html += municipality.name;
+                                html += '<span style="color: #666; font-size: 12px; margin-left: 5px;">(' + municipality.prefecture_name + ')</span>';
+                                html += '</label>';
+                            });
+                            
+                            $('#municipality-checkboxes').html(html).show();
+                            $('#municipality-loading').hide();
+                        } else {
+                            $('#municipality-loading').show().text('選択された都道府県に登録されている市町村がありません');
+                            $('#municipality-checkboxes').hide();
+                        }
+                    },
+                    error: function() {
+                        $('#municipality-loading').show().text('市町村の読み込みに失敗しました');
+                        $('#municipality-checkboxes').hide();
+                    }
+                });
+            }
+            
+            // 選択されている市町村IDを取得
+            function getSelectedMunicipalities() {
+                var selected = [];
+                $('#selected-municipalities input[name="grant_municipalities[]"]').each(function() {
+                    selected.push($(this).val());
+                });
+                return selected;
+            }
+            
+            // ページ読み込み時に市町村リストを更新
+            updateMunicipalityList();
+            
+            // 市町村検索機能
+            $('#municipality_search').on('input', function() {
+                var searchTerm = $(this).val().toLowerCase();
+                $('.municipality-option').each(function() {
+                    var municipalityName = $(this).text().toLowerCase();
+                    if (municipalityName.indexOf(searchTerm) !== -1) {
+                        $(this).show();
+                    } else {
+                        $(this).hide();
+                    }
+                });
+            });
+        });
+        </script>
         <?php
     }
     

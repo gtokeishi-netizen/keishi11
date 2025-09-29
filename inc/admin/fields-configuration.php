@@ -274,17 +274,7 @@ function gi_register_acf_field_groups() {
                 'media_upload' => 0,
             ),
             
-            array(
-                'key' => 'field_eligible_expenses',
-                'label' => '対象経費',
-                'name' => 'eligible_expenses',
-                'type' => 'wysiwyg',
-                'instructions' => '助成対象となる経費を入力してください。',
-                'required' => 0,
-                'tabs' => 'visual',
-                'toolbar' => 'basic',
-                'media_upload' => 0,
-            ),
+            // 対象経費フィールドは削除されました（ユーザー要求により）
             
             array(
                 'key' => 'field_grant_difficulty',
