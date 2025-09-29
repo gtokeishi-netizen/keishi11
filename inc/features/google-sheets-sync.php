@@ -1382,6 +1382,7 @@ class GoogleSheetsSync {
                 // 同期タイムスタンプを更新
                 update_post_meta($post_id, '_sheets_last_sync', $sync_start_time);
                 $synced_count++;
+            }
         }
         
         // 新規作成された投稿のIDをスプレッドシートに書き戻し
