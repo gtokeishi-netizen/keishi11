@@ -830,48 +830,40 @@ function convertRowDataToStructured(rowData) {
   }
   
   return {
-    // 基本情報（A-G列）
+    // 基本情報（A-C列）
     id: rowData[0] || '',                          // A列: ID
     title: rowData[1] || '',                       // B列: タイトル  
     content: rowData[2] || '',                     // C列: 内容
-    excerpt: rowData[3] || '',                     // D列: 抜粋
-    status: rowData[4] || 'draft',                 // E列: ステータス
-    created_date: rowData[5] || '',                // F列: 作成日
-    updated_date: rowData[6] || '',                // G列: 更新日
     
-    // 助成金情報（H-K列）
-    amount_display: rowData[7] || '',              // H列: 助成金額（表示用）
-    amount_numeric: rowData[8] || '',              // I列: 助成金額（数値）
-    deadline_display: rowData[9] || '',            // J列: 申請期限（表示用）
-    deadline_date: rowData[10] || '',              // K列: 申請期限（日付）
+    // 基本フィールド（D-K列）★初期バージョン
+    category: rowData[3] || '',                    // D列: カテゴリ ★基本フィールド
+    prefecture: rowData[4] || '',                  // E列: 都道府県 ★基本フィールド
+    municipality: rowData[5] || '',                // F列: 市町村 ★基本フィールド
+    tags: rowData[6] || '',                        // G列: タグ ★基本フィールド
+    start_date: rowData[7] || '',                  // H列: 募集開始日 ★基本フィールド
+    end_date: rowData[8] || '',                    // I列: 募集終了日 ★基本フィールド
+    status: rowData[9] || 'draft',                 // J列: 公開状況 ★基本フィールド
+    updated_date: rowData[10] || '',               // K列: 最終更新 ★基本フィールド
     
-    // 組織・申請情報（L-Q列）
+    // 組織・申請情報（L-S列）
     organization: rowData[11] || '',               // L列: 実施組織
     organization_type: rowData[12] || '',          // M列: 組織タイプ
     target_description: rowData[13] || '',         // N列: 対象者・対象事業
     application_method: rowData[14] || '',         // O列: 申請方法
     contact_info: rowData[15] || '',               // P列: 問い合わせ先
     official_url: rowData[16] || '',               // Q列: 公式URL
-    
-    // 地域・カテゴリ情報（R-W列）
     area_restriction: rowData[17] || '',           // R列: 地域制限
     application_status: rowData[18] || '',         // S列: 申請ステータス
-    prefecture: rowData[19] || '',                 // T列: 都道府県
-    municipality: rowData[20] || '',               // U列: 市町村
-    category: rowData[21] || '',                   // V列: カテゴリ
-    tags: rowData[22] || '',                       // W列: タグ
     
-    // 新規追加フィールド（X-AD列）★完全連携対応
-    external_links: rowData[23] || '',             // X列: 外部リンク
-    area_notes: rowData[24] || '',                 // Y列: 地域に関する備考
-    required_documents: rowData[25] || '',         // Z列: 必要書類
-    adoption_rate: rowData[26] || '',              // AA列: 採択率（%）
-    difficulty_level: rowData[27] || '',           // AB列: 申請難易度
-    eligible_expenses: rowData[28] || '',          // AC列: 対象経費
-    subsidy_rate: rowData[29] || '',               // AD列: 補助率
+    // 追加情報（T-X列）
+    required_documents: rowData[19] || '',         // T列: 必要書類
+    adoption_rate: rowData[20] || '',              // U列: 採択率（%）
+    difficulty_level: rowData[21] || '',           // V列: 申請難易度
+    eligible_expenses: rowData[22] || '',          // W列: 対象経費
+    subsidy_rate: rowData[23] || '',               // X列: 補助率
     
     // システム情報
-    sheet_updated: rowData[30] || ''               // AE列: シート更新日
+    sheet_updated: rowData[24] || ''               // Y列: シート更新日
   };
 }
 
@@ -1077,16 +1069,16 @@ function requestGrantPostsFromWordPress() {
 function setupHeaders(sheet) {
   const headers = [
     'ID',                    // A列
-    'タイトル',               // B列
+    'タイトル',               // B列  
     '内容',                  // C列
-    '抜粋',                  // D列
-    'ステータス',             // E列
-    '作成日',                // F列
-    '更新日',                // G列
-    '助成金額（表示用）',      // H列
-    '助成金額（数値）',        // I列
-    '申請期限（表示用）',      // J列
-    '申請期限（日付）',        // K列
+    'カテゴリ',              // D列 ★基本フィールド
+    '都道府県',              // E列 ★基本フィールド
+    '市町村',                // F列 ★基本フィールド
+    'タグ',                 // G列 ★基本フィールド
+    '募集開始日',            // H列 ★基本フィールド
+    '募集終了日',            // I列 ★基本フィールド
+    '公開状況',              // J列 ★基本フィールド
+    '最終更新',              // K列 ★基本フィールド
     '実施組織',              // L列
     '組織タイプ',            // M列
     '対象者・対象事業',       // N列
@@ -1095,18 +1087,12 @@ function setupHeaders(sheet) {
     '公式URL',               // Q列
     '地域制限',              // R列
     '申請ステータス',         // S列
-    '都道府県',              // T列
-    '市町村',                // U列
-    'カテゴリ',              // V列
-    'タグ',                 // W列
-    '外部リンク',            // X列 ★新規追加
-    '地域に関する備考',      // Y列 ★新規追加  
-    '必要書類',              // Z列 ★新規追加
-    '採択率（%）',           // AA列 ★新規追加
-    '申請難易度',            // AB列 ★新規追加
-    '対象経費',              // AC列 ★新規追加
-    '補助率',                // AD列 ★新規追加
-    'シート更新日'           // AE列
+    '必要書類',              // T列
+    '採択率（%）',           // U列
+    '申請難易度',            // V列
+    '対象経費',              // W列
+    '補助率',                // X列
+    'シート更新日'           // Y列
   ];
 
   const headerRange = sheet.getRange(1, 1, 1, headers.length);
@@ -2483,24 +2469,20 @@ function fixMunicipalityValidation() {
  */
 function checkHeaderIntegrity() {
   try {
-    // setupHeaders関数のヘッダー配列を取得（実際の関数内容を模擬）
+    // setupHeaders関数のヘッダー配列を取得（初期バージョン基本フィールド）
     const headers = [
-      'ID', 'タイトル', '内容', '抜粋', 'ステータス', '作成日', '更新日',
-      '助成金額（表示用）', '助成金額（数値）', '申請期限（表示用）', '申請期限（日付）',
-      '実施組織', '組織タイプ', '対象者・対象事業', '申請方法', '問い合わせ先', '公式URL',
-      '地域制限', '申請ステータス', '都道府県', '市町村', 'カテゴリ', 'タグ',
-      '外部リンク', '地域に関する備考', '必要書類', '採択率（%）', '申請難易度', '対象経費', '補助率',
-      'シート更新日'
+      'ID', 'タイトル', '内容', 'カテゴリ', '都道府県', '市町村', 'タグ', '募集開始日', '募集終了日',
+      '公開状況', '最終更新', '実施組織', '組織タイプ', '対象者・対象事業', '申請方法', '問い合わせ先', 
+      '公式URL', '地域制限', '申請ステータス', '必要書類', '採択率（%）', '申請難易度', '対象経費', 
+      '補助率', 'シート更新日'
     ];
     
-    // convertRowDataToStructured関数のマッピングキー（期待される順序）
+    // convertRowDataToStructured関数のマッピングキー（初期バージョン対応）
     const expectedMappings = [
-      'id', 'title', 'content', 'excerpt', 'status', 'created_date', 'updated_date',
-      'amount_display', 'amount_numeric', 'deadline_display', 'deadline_date',
-      'organization', 'organization_type', 'target_description', 'application_method', 'contact_info', 'official_url',
-      'area_restriction', 'application_status', 'prefecture', 'municipality', 'category', 'tags',
-      'external_links', 'area_notes', 'required_documents', 'adoption_rate', 'difficulty_level', 'eligible_expenses', 'subsidy_rate',
-      'sheet_updated'
+      'id', 'title', 'content', 'category', 'prefecture', 'municipality', 'tags', 'start_date', 'end_date',
+      'status', 'updated_date', 'organization', 'organization_type', 'target_description', 'application_method', 'contact_info',
+      'official_url', 'area_restriction', 'application_status', 'required_documents', 'adoption_rate', 'difficulty_level', 'eligible_expenses',
+      'subsidy_rate', 'sheet_updated'
     ];
     
     // 整合性チェック

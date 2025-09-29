@@ -371,17 +371,38 @@ class GoogleSheetsSync {
         $end_date = get_field('application_end_date', $post_id);
         
         return array(
-            $post_id,
-            $post->post_title,
-            wp_strip_all_tags($post->post_content),
-            implode(', ', $category_names),
-            implode(', ', $prefecture_names),
-            implode(', ', $municipality_names),
-            implode(', ', $tag_names),
-            $start_date ? $start_date : '',
-            $end_date ? $end_date : '',
-            $post->post_status,
-            $post->post_modified
+            // A-K列: 基本フィールド（初期バージョン）
+            $post_id,                                    // A列: ID
+            $post->post_title,                           // B列: タイトル
+            wp_strip_all_tags($post->post_content),      // C列: 内容
+            implode(', ', $category_names),              // D列: カテゴリ ★基本フィールド
+            implode(', ', $prefecture_names),            // E列: 都道府県 ★基本フィールド
+            implode(', ', $municipality_names),          // F列: 市町村 ★基本フィールド
+            implode(', ', $tag_names),                   // G列: タグ ★基本フィールド
+            $start_date ? $start_date : '',              // H列: 募集開始日 ★基本フィールド
+            $end_date ? $end_date : '',                  // I列: 募集終了日 ★基本フィールド
+            $post->post_status,                          // J列: 公開状況 ★基本フィールド
+            $post->post_modified,                        // K列: 最終更新 ★基本フィールド
+            
+            // L-S列: 組織・申請情報
+            get_field('implementing_organization', $post_id) ?: '',     // L列: 実施組織
+            get_field('organization_type', $post_id) ?: '',             // M列: 組織タイプ
+            get_field('target_description', $post_id) ?: '',            // N列: 対象者・対象事業
+            get_field('application_method', $post_id) ?: '',            // O列: 申請方法
+            get_field('contact_info', $post_id) ?: '',                  // P列: 問い合わせ先
+            get_field('official_url', $post_id) ?: '',                  // Q列: 公式URL
+            get_field('area_restriction', $post_id) ?: '',              // R列: 地域制限
+            get_field('application_status', $post_id) ?: '',            // S列: 申請ステータス
+            
+            // T-X列: 追加情報
+            get_field('required_documents', $post_id) ?: '',            // T列: 必要書類
+            get_field('adoption_rate', $post_id) ?: '',                 // U列: 採択率（%）
+            get_field('difficulty_level', $post_id) ?: '',              // V列: 申請難易度
+            get_field('eligible_expenses', $post_id) ?: '',             // W列: 対象経費
+            get_field('subsidy_rate', $post_id) ?: '',                  // X列: 補助率
+            
+            // Y列: システム情報
+            current_time('Y-m-d H:i:s')                                 // Y列: シート更新日
         );
     }
     
@@ -405,10 +426,10 @@ class GoogleSheetsSync {
             if (!empty($row[0]) && intval($row[0]) === $post_id) {
                 $sheet_name = $this->get_sheet_name();
                 $row_index = $index + 1;
-                $range = $sheet_name . '!A' . $row_index . ':Z' . $row_index;
+                $range = $sheet_name . '!A' . $row_index . ':Y' . $row_index;
                 
-                // 行を空にする
-                $this->write_sheet_data($range, array(array_fill(0, 26, '')));
+                // 行を空にする（25列に対応）
+                $this->write_sheet_data($range, array(array_fill(0, 25, '')));
                 break;
             }
         }
