@@ -36,255 +36,50 @@ class GoogleSheetsSync {
      * フックの初期化
      */
     private function init_hooks() {
-        // WordPress管理画面に設定ページを追加
-        add_action('admin_menu', array($this, 'add_admin_menu'));
-        add_action('admin_init', array($this, 'register_settings'));
-        
-        // 同期フック
+        // 同期フック（管理画面は既存のSheetsAdminUIを使用）
         add_action('save_post_grant', array($this, 'sync_post_to_sheets'), 10, 3);
         add_action('before_delete_post', array($this, 'delete_post_from_sheets'));
         
-        // AJAX処理
+        // 既存管理画面用のAJAX処理をサポート
         add_action('wp_ajax_gi_test_sheets_connection', array($this, 'ajax_test_connection'));
         add_action('wp_ajax_gi_manual_sheets_sync', array($this, 'ajax_manual_sync'));
     }
     
-    /**
-     * 管理画面メニューを追加
-     */
-    public function add_admin_menu() {
-        add_submenu_page(
-            'edit.php?post_type=grant',
-            'Google Sheets同期設定',
-            'Sheets同期',
-            'manage_options',
-            'gi-sheets-sync',
-            array($this, 'admin_page')
-        );
-    }
+
+    
+
+    
+
     
     /**
-     * 設定の登録
-     */
-    public function register_settings() {
-        register_setting('gi_sheets_settings', 'gi_sheets_config');
-        
-        add_settings_section(
-            'gi_sheets_basic',
-            'Google Sheets設定',
-            null,
-            'gi_sheets_settings'
-        );
-        
-        // スプレッドシートID
-        add_settings_field(
-            'spreadsheet_id',
-            'スプレッドシートID',
-            array($this, 'spreadsheet_id_field'),
-            'gi_sheets_settings',
-            'gi_sheets_basic'
-        );
-        
-        // シート名
-        add_settings_field(
-            'sheet_name',
-            'シート名',
-            array($this, 'sheet_name_field'),
-            'gi_sheets_settings',
-            'gi_sheets_basic'
-        );
-        
-        // サービスアカウントJSON
-        add_settings_field(
-            'service_account_json',
-            'サービスアカウントJSON',
-            array($this, 'service_account_field'),
-            'gi_sheets_settings',
-            'gi_sheets_basic'
-        );
-        
-        // ヘッダー行設定
-        add_settings_field(
-            'header_row',
-            'ヘッダー行（カラム名）',
-            array($this, 'header_row_field'),
-            'gi_sheets_settings',
-            'gi_sheets_basic'
-        );
-    }
-    
-    /**
-     * 管理画面ページ
-     */
-    public function admin_page() {
-        ?>
-        <div class="wrap">
-            <h1>Google Sheets同期設定</h1>
-            
-            <?php if (isset($_GET['settings-updated'])) : ?>
-                <div class="notice notice-success is-dismissible">
-                    <p>設定が保存されました。</p>
-                </div>
-            <?php endif; ?>
-            
-            <form method="post" action="options.php">
-                <?php
-                settings_fields('gi_sheets_settings');
-                do_settings_sections('gi_sheets_settings');
-                submit_button();
-                ?>
-            </form>
-            
-            <hr>
-            
-            <h2>動作確認</h2>
-            <p>
-                <button type="button" class="button" id="test-connection">接続テスト</button>
-                <button type="button" class="button button-primary" id="manual-sync">手動同期実行</button>
-            </p>
-            
-            <div id="sync-result" style="margin-top: 20px;"></div>
-        </div>
-        
-        <script>
-        jQuery(document).ready(function($) {
-            $('#test-connection').click(function() {
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'gi_test_sheets_connection',
-                        nonce: '<?php echo wp_create_nonce('gi_sheets_nonce'); ?>'
-                    },
-                    success: function(response) {
-                        $('#sync-result').html('<div class="notice notice-' + 
-                            (response.success ? 'success' : 'error') + '"><p>' + 
-                            response.data + '</p></div>');
-                    }
-                });
-            });
-            
-            $('#manual-sync').click(function() {
-                $(this).prop('disabled', true).text('同期中...');
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'gi_manual_sheets_sync',
-                        nonce: '<?php echo wp_create_nonce('gi_sheets_nonce'); ?>'
-                    },
-                    success: function(response) {
-                        $('#sync-result').html('<div class="notice notice-' + 
-                            (response.success ? 'success' : 'error') + '"><p>' + 
-                            response.data + '</p></div>');
-                    },
-                    complete: function() {
-                        $('#manual-sync').prop('disabled', false).text('手動同期実行');
-                    }
-                });
-            });
-        });
-        </script>
-        <?php
-    }
-    
-    /**
-     * 設定フィールド
-     */
-    public function spreadsheet_id_field() {
-        $config = get_option('gi_sheets_config', array());
-        $value = isset($config['spreadsheet_id']) ? $config['spreadsheet_id'] : '';
-        echo '<input type="text" name="gi_sheets_config[spreadsheet_id]" value="' . esc_attr($value) . '" class="regular-text" placeholder="1ABC...XYZ" />';
-        echo '<p class="description">Google SheetsのURLからスプレッドシートIDを取得してください</p>';
-    }
-    
-    public function sheet_name_field() {
-        $config = get_option('gi_sheets_config', array());
-        $value = isset($config['sheet_name']) ? $config['sheet_name'] : 'grant_import';
-        echo '<input type="text" name="gi_sheets_config[sheet_name]" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">同期するシートのタブ名</p>';
-    }
-    
-    public function service_account_field() {
-        $config = get_option('gi_sheets_config', array());
-        $value = isset($config['service_account_json']) ? $config['service_account_json'] : '';
-        echo '<textarea name="gi_sheets_config[service_account_json]" rows="10" class="large-text code" placeholder=\'{"type": "service_account", ...}\'>' . esc_textarea($value) . '</textarea>';
-        echo '<p class="description">Google Cloud Consoleから取得したサービスアカウントのJSONキー</p>';
-    }
-    
-    public function header_row_field() {
-        $config = get_option('gi_sheets_config', array());
-        $default_headers = array(
-            'ID', 'タイトル', '内容', 'カテゴリ', '都道府県', '市町村', 
-            'タグ', '募集開始日', '募集終了日', '公開状況', '最終更新'
-        );
-        $headers = isset($config['headers']) ? $config['headers'] : $default_headers;
-        
-        echo '<div id="header-fields">';
-        foreach ($headers as $index => $header) {
-            echo '<div class="header-field">';
-            echo '<input type="text" name="gi_sheets_config[headers][' . $index . ']" value="' . esc_attr($header) . '" placeholder="カラム名" />';
-            echo '<button type="button" class="button remove-header">削除</button>';
-            echo '</div>';
-        }
-        echo '</div>';
-        echo '<button type="button" class="button" id="add-header">カラム追加</button>';
-        echo '<p class="description">Google Sheetsの1行目に設定されるヘッダー（カラム名）</p>';
-        
-        ?>
-        <script>
-        jQuery(document).ready(function($) {
-            let headerIndex = <?php echo count($headers); ?>;
-            
-            $('#add-header').click(function() {
-                $('#header-fields').append(
-                    '<div class="header-field">' +
-                    '<input type="text" name="gi_sheets_config[headers][' + headerIndex + ']" placeholder="カラム名" />' +
-                    '<button type="button" class="button remove-header">削除</button>' +
-                    '</div>'
-                );
-                headerIndex++;
-            });
-            
-            $(document).on('click', '.remove-header', function() {
-                $(this).closest('.header-field').remove();
-            });
-        });
-        </script>
-        <style>
-        .header-field {
-            margin-bottom: 5px;
-        }
-        .header-field input {
-            width: 200px;
-            margin-right: 10px;
-        }
-        </style>
-        <?php
-    }
-    
-    /**
-     * 設定を取得
-     */
-    private function get_config() {
-        return get_option('gi_sheets_config', array());
-    }
-    
-    /**
-     * サービスアカウント情報を取得
+     * サービスアカウント情報を取得（既存のハードコード設定を使用）
      */
     private function get_service_account_key() {
-        $config = $this->get_config();
-        if (empty($config['service_account_json'])) {
-            return false;
-        }
-        
-        $json = json_decode($config['service_account_json'], true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return false;
-        }
-        
-        return $json;
+        // 既存のハードコード設定を使用（元のコードから）
+        return array(
+            "type" => "service_account",
+            "project_id" => "grant-sheets-integration",
+            "private_key_id" => "c0fdd6753a43e1c51cbc1854c4ce53cb461b0136",
+            "private_key" => "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC+Ba+i0O4k0Jta\n17u3D/hJaqkLuptpyknOhjeQLzOGl9GtRP88KYX+NpKO1RxuuZMmlBt/7ShlXDPk\nJXdOtOjPlMzHZeh32M/f+98L9S9PVfapGUKRV0p4XJmExljmP7AVnXaMjlXqm9BJ\ngvO7K898LApyAsdrtcOYgt371LWZbQdTqpNWQemfJcYnTndwMcYzv6Snm/lOUruD\nrV2VOhvsMfqwVOaKywhE6rvUrF1ARaT3meQJyF9CpqFcb947f5phRUVD1QEdQp1K\nfGeFmMqR3nT4sY6I7VVqnseyr7v6U4i9V2aaL8KhUmH895xRlL6cc+QR7lgPtkT3\nZ8FJdseLAgMBAAECggEAWj9OFrg+2jo/Bmp+SyepBolDJwBl7lz2J8Fj4zUfthUl\nrrKdu9+GtWEKww5g1g+J3SErXFrwvA8J0BmhK77M8UWc6jiyqzTMKXcwjDfS082i\ne9Y04N1Bz58/BCnFr/jgcquZ0ZCKKoX86uToR+U7QiCSh2pddwDZF/ZTYla4NtiZ\nP/uZBAIuO/Fz2bLnjzQrQ1tLBdgY3mWx/wChi6+JhqubiNTnrWqy8qXG8P2OieZS\nQxU31/EjOp8rK4ErxqN5WDS0BRhIKM0DTN3WXwB8Sb5JCSluxksdICvNshiilsVF\nQGsXF3pGZA6Okv9cJS0u6vUoYVMMSzeWQvyM0tKwuQKBgQDgrUS2K21sVun+mI3L\niQ99XlMDT0AhsDaSWyenqveNawosoKz3ueBXEwkpOcM8DdcTDKbZVohM7h1cTEax\nPobdj2bQdUFWkzup5kekVBu88bIPthTMK5IuTUcHYyfiH8V7vsEtrX184UAiET/p\nXmHZ+lcUCuL+8+uKogEdvy/1UwKBgQDYg5eJlQ0hoOH0VP8HkSeJSn246X8CdeHT\n1kgkymJcLwWYr+EKngTQrSkLkIfxBER3UMfHtla95IL4qGC/iNcIWbie2Gtc2wXz\nWvwpaoliReoKOYyFG94Fl5zdcp5xYi2oA2qB9LM+eyCqqEEkVhpg3w61Xfj03wMI\n6Ibxc0al6QKBgQC7KVut7WtP7u8qOWcVgG244BSDE0e3SJWNQgY8tD1YPyzQlGDC\nVMM/hgoBn661nknmAooTTvRoMYuf0aKqEA5FDyp0yNjPCAORutU/XRlmQmk0kVet\n5TX3AEUFMGKPCix2syc1p+p7VyEXwArfmtIkxVg4yADkpck3SVFouFV5JQKBgDcz\njb45L0jkoNdPmFoQixj40gcEGSrCbVo6JtiidON15aJhLSos0aN2kqFtLwum/+G/\nyb/EYGc3zKCjJU+QDusFHQn6uZzKBsFd8C6LCA3zL1F+DLKfQUMBva/EGltkIanV\nfSE3B0Al2lVIYptmDIGoPTLGi8O63CY4SrdioZ+JAoGAMjzeU4jqFtkXaiRBTa+v\njspaqbk1rq1x4ZmnPMZzMQnZLStP9QP7SQn5/my/ZSWcnmjxW8ZgMdfWB1TD51RC\n4HYL/jGrjOUmumshQmiA1a7zCvr8yVJFkOVcYpCWl6TT5hiFbqrW82Dw73JFHTuK\n30Chu7ki9aOiJJeMmHaOfOU=\n-----END PRIVATE KEY-----\n",
+            "client_email" => "grant-sheets-service@grant-sheets-integration.iam.gserviceaccount.com",
+            "client_id" => "109769300820349787611",
+            "auth_uri" => "https://accounts.google.com/o/oauth2/auth",
+            "token_uri" => "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url" => "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url" => "https://www.googleapis.com/robot/v1/metadata/x509/grant-sheets-service%40grant-sheets-integration.iam.gserviceaccount.com",
+            "universe_domain" => "googleapis.com"
+        );
+    }
+    
+    /**
+     * スプレッドシート設定を取得
+     */
+    private function get_spreadsheet_id() {
+        return '1kGc1Eb4AYvURkSfdzMwipNjfe8xC6iGCM2q1sUgIfWg';
+    }
+    
+    private function get_sheet_name() {
+        return 'grant_import';
     }
     
     /**
@@ -389,22 +184,16 @@ class GoogleSheetsSync {
      * Sheetsからデータを読み取り
      */
     public function read_sheet_data($range = null) {
-        $config = $this->get_config();
-        if (empty($config['spreadsheet_id'])) {
-            return false;
-        }
-        
         $access_token = $this->get_access_token();
         if (!$access_token) {
             return false;
         }
         
         if (!$range) {
-            $sheet_name = !empty($config['sheet_name']) ? $config['sheet_name'] : 'grant_import';
-            $range = $sheet_name . '!A:Z';  // A-Z列を読み取り
+            $range = $this->get_sheet_name() . '!A:Z';  // A-Z列を読み取り
         }
         
-        $url = self::SHEETS_API_URL . $config['spreadsheet_id'] . '/values/' . urlencode($range);
+        $url = self::SHEETS_API_URL . $this->get_spreadsheet_id() . '/values/' . urlencode($range);
         
         $response = wp_remote_get($url, array(
             'headers' => array(
@@ -435,17 +224,12 @@ class GoogleSheetsSync {
      * Sheetsにデータを書き込み
      */
     public function write_sheet_data($range, $values) {
-        $config = $this->get_config();
-        if (empty($config['spreadsheet_id'])) {
-            return false;
-        }
-        
         $access_token = $this->get_access_token();
         if (!$access_token) {
             return false;
         }
         
-        $url = self::SHEETS_API_URL . $config['spreadsheet_id'] . '/values/' . urlencode($range) . '?valueInputOption=RAW';
+        $url = self::SHEETS_API_URL . $this->get_spreadsheet_id() . '/values/' . urlencode($range) . '?valueInputOption=RAW';
         
         $response = wp_remote_request($url, array(
             'method' => 'PUT',
@@ -469,18 +253,15 @@ class GoogleSheetsSync {
     }
     
     /**
-     * ヘッダー行を設定
+     * ヘッダー行を設定（固定）
      */
     public function setup_sheet_headers() {
-        $config = $this->get_config();
-        $headers = isset($config['headers']) ? $config['headers'] : array();
+        $headers = array(
+            'ID', 'タイトル', '内容', 'カテゴリ', '都道府県', '市町村', 
+            'タグ', '募集開始日', '募集終了日', '公開状況', '最終更新'
+        );
         
-        if (empty($headers)) {
-            return false;
-        }
-        
-        $sheet_name = !empty($config['sheet_name']) ? $config['sheet_name'] : 'grant_import';
-        $range = $sheet_name . '!A1:' . $this->number_to_column(count($headers)) . '1';
+        $range = $this->get_sheet_name() . '!A1:' . $this->number_to_column(count($headers)) . '1';
         
         return $this->write_sheet_data($range, array($headers));
     }
@@ -530,8 +311,7 @@ class GoogleSheetsSync {
             }
         }
         
-        $config = $this->get_config();
-        $sheet_name = !empty($config['sheet_name']) ? $config['sheet_name'] : 'grant_import';
+        $sheet_name = $this->get_sheet_name();
         
         if ($row_found) {
             // 既存行を更新
@@ -623,8 +403,7 @@ class GoogleSheetsSync {
         
         foreach ($sheet_data as $index => $row) {
             if (!empty($row[0]) && intval($row[0]) === $post_id) {
-                $config = $this->get_config();
-                $sheet_name = !empty($config['sheet_name']) ? $config['sheet_name'] : 'grant_import';
+                $sheet_name = $this->get_sheet_name();
                 $row_index = $index + 1;
                 $range = $sheet_name . '!A' . $row_index . ':Z' . $row_index;
                 
